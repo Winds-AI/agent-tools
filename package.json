@@ -1,6 +1,6 @@
 {
   "name": "@winds-ai/pi-extensions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extensions maintained by Winds AI",
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,7 @@
   },
   "pi": {
     "extensions": [
+      "./extensions/browser-comment/index.ts",
       "./extensions/pi-sticky/index.ts",
       "./extensions/user-message-navigation/index.ts"
     ]

@@ -4,6 +4,10 @@ A small collection of extensions for [Pi](https://github.com/badlogic/pi-mono/tr
 
 ## Extensions
 
+### Browser Comment
+
+Adds `/comment`, which opens the latest completed assistant response in a local browser review page. Select passages, attach comments, add an overall note, and submit the structured feedback back into Pi's editor. Markdown, Mermaid diagrams, and sandboxed HTML previews are supported.
+
 ### Pi Sticky
 
 Keeps the chat input and footer pinned while chat history scrolls. This fork retains mouse scrolling and selection but intentionally registers **no keyboard scrolling shortcuts**, leaving every keyboard shortcut available to Pi and other extensions.
@@ -27,7 +31,7 @@ Adds direct session-tree navigation through user messages:
 pi install git:github.com/Winds-AI/pi-extensions
 ```
 
-Restart Pi after installation. Both extensions are enabled by default and can be toggled independently with `pi config`.
+Restart Pi after installation. All extensions are enabled by default and can be toggled independently with `pi config`.
 
 ### Terminal setup for Cmd+Arrow
 
@@ -44,6 +48,7 @@ Then reload the terminal configuration or restart the terminal.
 
 ```text
 extensions/
+├── browser-comment/
 ├── pi-sticky/
 └── user-message-navigation/
 ```

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pi Comment</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <main class="page">
+    <article id="content" class="markdown"></article>
+  </main>
+
+  <div class="composer-shell">
+    <div class="composer-inner">
+      <textarea
+        id="overall-note"
+        class="overall-note"
+        rows="3"
+        placeholder="Overall note (optional) — general feedback not tied to a selection…"
+      ></textarea>
+      <div class="composer-actions">
+        <button type="button" id="btn-cancel" class="btn ghost">Cancel</button>
+        <button type="button" id="btn-submit" class="btn primary" disabled>Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="popup" class="popup hidden" role="dialog" aria-label="Add comment">
+    <textarea id="popup-input" rows="3" placeholder="Write a comment…"></textarea>
+    <div class="popup-actions">
+      <button type="button" id="popup-cancel" class="btn ghost">Cancel</button>
+      <button type="button" id="popup-add" class="btn primary">Add</button>
+    </div>
+  </div>
+
+  <div id="note" class="note hidden" role="dialog" aria-label="Comment">
+    <div class="note-head">
+      <button type="button" id="note-delete" class="note-delete" title="Delete comment">Delete</button>
+    </div>
+    <p id="note-body" class="note-body"></p>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/assets/vendor/marked.min.js"></script>
+  <script src="/assets/vendor/mermaid.min.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
