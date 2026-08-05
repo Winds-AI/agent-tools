@@ -10,4 +10,15 @@ This local fork preserves:
 
 It intentionally removes all keyboard scrolling and shortcut-matching functionality so keyboard input remains available to Pi and other extensions.
 
+## Install
+
+Clone the collection, then install this package by local path:
+
+```bash
+git clone https://github.com/Winds-AI/pi-extensions.git
+pi install ./pi-extensions/pi-sticky
+```
+
+Restart Pi after installation.
+
 Based on [`@burneikis/pi-sticky`](https://github.com/burneikis/pi-sticky). See [LICENSE](LICENSE) for upstream and third-party attribution.

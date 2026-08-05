@@ -1,0 +1,14 @@
+{
+  "name": "@winds-ai/pi-browser-comment",
+  "version": "0.1.0",
+  "description": "Review and annotate Pi assistant responses in a local browser",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

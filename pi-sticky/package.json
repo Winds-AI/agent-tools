@@ -1,0 +1,15 @@
+{
+  "name": "@winds-ai/pi-sticky",
+  "version": "0.1.0",
+  "description": "Keep Pi's editor pinned while retaining mouse-only history scrolling",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

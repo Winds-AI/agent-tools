@@ -1,0 +1,15 @@
+{
+  "name": "@winds-ai/pi-user-message-navigation",
+  "version": "0.1.0",
+  "description": "Navigate Pi's session tree through user messages with Cmd+Up and Cmd+Down",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

@@ -4,10 +4,11 @@
 
 ## Install
 
-Install the containing package from its repository root:
+Clone the collection, then install this package by local path:
 
 ```bash
-pi install git:github.com/Winds-AI/pi-extensions
+git clone https://github.com/Winds-AI/pi-extensions.git
+pi install ./pi-extensions/browser-comment
 ```
 
 Restart Pi after installation.
