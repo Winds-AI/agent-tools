@@ -1,0 +1,14 @@
+{
+  "name": "@winds-ai/pi-tps-tracker",
+  "version": "0.1.0",
+  "description": "Live and final output-token throughput tracking for Pi",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension", "tokens", "performance"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

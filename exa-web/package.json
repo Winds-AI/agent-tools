@@ -1,0 +1,19 @@
+{
+  "name": "@winds-ai/pi-exa-web",
+  "version": "0.1.0",
+  "description": "Exa web search and content extraction tools for Pi",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension", "exa", "search"],
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
