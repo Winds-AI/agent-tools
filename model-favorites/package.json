@@ -1,0 +1,17 @@
+{
+  "name": "@winds-ai/pi-model-favorites",
+  "version": "0.1.0",
+  "description": "Model picker for pi with favorites pinned to the top — a faithful clone of the built-in /model UI",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension", "model-picker", "favorites"],
+  "files": ["index.ts", "README.md"],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
