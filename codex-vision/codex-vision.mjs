@@ -11,6 +11,6 @@ const { stdout } = spawnSync("codex", [
   "--config", 'model_reasoning_effort="low"',
   `Inspect the image and answer only this request: ${instruction}`,
   "--image", imageArg,
-], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+], { encoding: "utf8" });
 
 process.stdout.write(stdout);
