@@ -1,0 +1,16 @@
+{
+  "name": "@winds-ai/pi-raw-probe",
+  "version": "0.1.0",
+  "description": "Ask any Pi-configured model a direct question through its provider API — no tools, no agent loop, raw responses including thinking",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension", "model", "probe", "raw"],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
