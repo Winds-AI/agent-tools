@@ -63,7 +63,8 @@ async function askLuna(imagePaths, prompt) {
       instructions:
         "You are the eyes of a non-vision model or agent. " +
         "Respect the requester's request exactly, and explain the image from its " +
-        "perspective — describe what it needs to understand and act on. Be concise and factual.",
+        "perspective — describe what it needs to understand and act on. " +
+        "Be concise and factual. If anything is unclear or in doubt, state that clearly.",
       input: [{ role: "user", content }],
       reasoning: { effort: "none" }, // no reasoning, standard mode
       store: false,
