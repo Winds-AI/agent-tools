@@ -1,6 +1,6 @@
 # Codex Ears
 
-Minimal voice transcription for pi using your existing Codex login, authentication, and subscription quota. No extra API keys or accounts.
+Minimal voice transcription for pi(any agent/harness) using your existing Codex login, authentication, and subscription quota. No extra API keys or accounts.
 
 Accepts an audio file (any format the ChatGPT transcribe API supports, e.g. WAV, MP3, M4A, WebM/Opus), sends it to ChatGPT's `backend-api/transcribe` endpoint — the same one the ChatGPT desktop app and Codex CLI use for dictation — and returns the transcript.
 
