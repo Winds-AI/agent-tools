@@ -24,6 +24,8 @@ The prompt is optional — defaults to `Describe what you see in this image.`
 
 The ChatGPT backend serves Luna through `POST https://chatgpt.com/backend-api/codex/responses`. This script sends the prompt plus each image as a base64 data URL in the request, with `reasoning: { effort: "none" }` (no reasoning), `store: false`, and no `service_tier` (standard mode, not priority/fast). Auth comes from `~/.codex/auth.json` (`$CODEX_HOME` is honored) via `Authorization: Bearer` + `ChatGPT-Account-Id` headers.
 
+We use plain HTTP (SSE), not the WebSocket transport Codex prefers for Luna. Fast/priority mode is not reliably honored over this HTTP path — the backend serves responses at the standard/default tier regardless — so we stay in standard mode.
+
 ## License
 
 MIT
