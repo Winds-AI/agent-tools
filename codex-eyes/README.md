@@ -1,6 +1,6 @@
 # Codex Eyes
 
-Minimal image understanding for pi using your existing Codex login, authentication, and subscription quota. No extra API keys or accounts.
+Minimal image understanding for pi(any agent/harness) using your existing Codex login, authentication, and subscription quota. No extra API keys or accounts.
 
 Sends one or more images to GPT-5.6 Luna (low-cost, fast model) via the ChatGPT `backend-api/codex/responses` endpoint — the same one Codex CLI uses — with `reasoning: none` in standard mode, and returns Luna's text response. A non-vision model can call this tool to understand images.
 
