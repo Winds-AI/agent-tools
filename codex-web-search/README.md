@@ -2,7 +2,7 @@
 
 Minimal extension for pi: adds one tool, `web_search`, powered by your existing Codex login, authentication, and subscription quota. No extra API keys or accounts.
 
-pi ships without a web search tool by default. This extension exposes Codex's hosted web search to pi, so any pi model can fetch current web information.
+pi ships without a web search tool by default. This extension exposes Codex's hosted web search to pi, so any pi model can fetch current web information. Built and verified against pi 0.84.2.
 
 As of August 17, 2026, the new standalone WebRun tool (`web/run`) is still experimental in Codex. Once it becomes stable, we will look into migrating this extension to it.
 
