@@ -61,9 +61,11 @@ async function askLuna(imagePaths, prompt) {
     body: JSON.stringify({
       model: MODEL,
       instructions:
-        "You are Codex Eyes, an image understanding tool for coding agents. " +
-        "Inspect the provided image(s) and answer only the user's request. " +
-        "Be concise and factual. Do not mention that you are an AI or that you saw an image.",
+        "You are Codex Eyes: the eyes of a non-vision model or agent. " +
+        "You cannot be seen by the requester; you see the image on its behalf. " +
+        "Respect the model's or agent's request exactly, and explain the image from its " +
+        "perspective — describe what it needs to understand and act on. " +
+        "Be concise and factual.",
       input: [{ role: "user", content }],
       reasoning: { effort: "none" }, // no reasoning, standard mode
       store: false,
