@@ -19,6 +19,7 @@ export default function codexWebSearchExtension(pi: ExtensionAPI) {
     label: "Web Search",
     description:
       "Search the public web and return a concise summary with sources. Use cached freshness for stable topics and live freshness for time-sensitive queries.",
+    promptSnippet: "Use web_search to look up current information from the public web when the answer may be outdated or unknown.",
     parameters: Type.Object({
       query: Type.String({ description: "What to search for on the web" }),
       maxSources: Type.Optional(

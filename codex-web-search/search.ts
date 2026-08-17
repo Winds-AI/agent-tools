@@ -75,6 +75,17 @@ function parseSSE(text: string): SSEEvent[] {
   return events;
 }
 
+/**
+ * Extract the error message from a `response.failed` / `response.incomplete`
+ * SSE event, mirroring how Codex surfaces backend errors (quota, cyber policy,
+ * overloaded, ...) from `response.error.message`.
+ */
+function sseErrorMessage(data: Record<string, unknown>): string | undefined {
+  const response = data.response as { error?: { message?: string } } | undefined;
+  const message = response?.error?.message?.trim();
+  return message || undefined;
+}
+
 export async function executeWebSearch(
   input: WebSearchInput,
   options?: {
@@ -108,7 +119,15 @@ export async function executeWebSearch(
         model: DEFAULT_MODEL,
         instructions: buildSearchPrompt(query, maxSources, freshness),
         input: [{ role: "user", content: `Search the web for: ${query}` }],
-        tools: [{ type: "web_search" }],
+        // Same shape Codex sends: cached -> external_web_access:false,
+        // live -> external_web_access:true (see hosted_spec.rs in codex-rs).
+        tools: [
+          {
+            type: "web_search",
+            external_web_access: freshness === "live",
+            indexed_web_access: freshness === "live" ? undefined : null,
+          },
+        ],
         store: false,
         stream: true,
       }),
@@ -127,6 +146,11 @@ export async function executeWebSearch(
     for (const event of parseSSE(await response.text())) {
       if (event.type === "response.output_text.delta") {
         rawOutput += event.data.delta ?? "";
+      } else if (event.type === "response.failed" || event.type === "response.incomplete") {
+        // Surface the backend error (quota, cyber policy, overloaded, ...)
+        // instead of failing with a generic "Empty response" later.
+        const message = sseErrorMessage(event.data);
+        throw new Error(message ?? "Web search request failed.");
       }
     }
 

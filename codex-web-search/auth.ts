@@ -2,7 +2,15 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const CODEX_AUTH_PATH = join(homedir(), ".codex", "auth.json");
+/**
+ * Resolve the Codex home directory, honoring the `CODEX_HOME` env var like
+ * Codex itself does (`find_codex_home()` in codex-rs). Defaults to ~/.codex.
+ */
+function codexHome(): string {
+  const env = process.env.CODEX_HOME;
+  if (env && env.trim() !== "") return env;
+  return join(homedir(), ".codex");
+}
 
 export class AuthError extends Error {
   constructor(message: string) {
@@ -23,11 +31,12 @@ interface CodexAuthFile {
 
 /**
  * Get Codex's auth credentials for web search.
- * Uses ~/.codex/auth.json which contains ChatGPT OAuth tokens.
+ * Uses $CODEX_HOME/auth.json (default ~/.codex/auth.json) which contains ChatGPT OAuth tokens.
  */
 export async function getCodexAuth(): Promise<{ accessToken: string; accountId: string }> {
+  const authPath = join(codexHome(), "auth.json");
   try {
-    const raw = await readFile(CODEX_AUTH_PATH, "utf-8");
+    const raw = await readFile(authPath, "utf-8");
     const auth = JSON.parse(raw) as CodexAuthFile;
 
     if (!auth.tokens?.access_token) {
@@ -51,7 +60,7 @@ export async function getCodexAuth(): Promise<{ accessToken: string; accountId: 
 
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new AuthError(
-        "Codex auth file not found at ~/.codex/auth.json.\n\n" +
+        `Codex auth file not found at ${authPath}.\n\n` +
         "Please run `codex login` to authenticate with OpenAI/Codex."
       );
     }
