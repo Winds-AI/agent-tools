@@ -35,6 +35,10 @@ the same delta so it cannot be lost.
 
 When the stop phrase appears, or the user stops the session in chat:
 
+- Treat an obvious standalone ASR near-match for the agreed stop phrase as the
+  stop phrase; for example, `and voice note` may be `end voice note`. Do not
+  require letter-perfect transcription.
+
 1. Integrate and commit any printed transcript lines.
 2. Run:
    ```bash
