@@ -6,20 +6,19 @@
  * and free-tier quota. No API keys, no AI Studio, no extra accounts.
  *
  * Sends one or more images to Gemini 3.7 Flash (tiered) via the same
- * v1internal endpoints the Antigravity CLI (agy) uses, with thinking set to
- * the lowest possible (thinkingLevel: LOW — the API's "no reasoning" floor),
- * and prints the model's text response. A non-vision model can call this
- * tool to understand images.
+ * v1internal endpoints the Antigravity CLI (agy) uses, with thinking at the
+ * lowest level the API accepts, and prints the model's text response. A
+ * non-vision model can call this tool to understand images.
  *
  * Deliberately stupid by design:
  *   - NO retries, NO waiting, NO fallback loop inside the script.
  *   - Tries ONE model exactly once, prints the answer or a clear error, exits.
  *   - If quota/rate-limited, the AGENT (pi) decides what to do next.
  *
- * Auth: reads the same macOS Keychain item the Antigravity CLI uses
- * (service "gemini", account "antigravity") via `security`, refreshes the
- * OAuth token if expired, then calls:
- *   POST https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent
+ * Auth: reads the same macOS Keychain item the Antigravity CLI writes
+ * (service "gemini", account "antigravity") via `security`, same as
+ * codex-eyes reads ~/.codex/auth.json. If the access token is expired or
+ * rejected, re-run `agy` once to refresh the login — the script stays dumb.
  *
  * Usage:
  *   node gemini-eyes.mjs /path/to/image.png "What does this show?"
@@ -44,7 +43,6 @@ const GENERATE_URL =
   "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
 const LOAD_ASSIST_URL =
   "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 // Newest free-tier Flash with vision. "tiered" = reasoning level is set per
 // request (thinkingLevel), not baked into the model id.
@@ -63,90 +61,11 @@ const MIME = {
   ".pdf": "application/pdf",
 };
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Get the Antigravity OAuth client credentials (client_id + client_secret).
- * These are public product constants embedded in the installed agy binary
- * (same "reuse the existing install" philosophy as codex-eyes reading
- * ~/.codex/auth.json). Override via env vars if needed.
- */
-async function getClientCredentials() {
-  const fromEnv = () => ({
-    clientId: process.env.ANTIGRAVITY_CLIENT_ID || "",
-    clientSecret: process.env.ANTIGRAVITY_CLIENT_SECRET || "",
-  });
-
-  const env = fromEnv();
-  if (env.clientId && env.clientSecret) return env;
-
-  // Find agy on PATH (or ANTIGRAVITY_CLI env override).
-  const agyPath =
-    process.env.ANTIGRAVITY_CLI ||
-    (await execFileAsync("which", ["agy"]).then((r) => r.stdout.trim()).catch(() => ""));
-  if (!agyPath) {
-    throw new Error(
-      "agy CLI not found. Install Antigravity CLI, or set ANTIGRAVITY_CLIENT_ID/SECRET.",
-    );
-  }
-
-  // Read the binary and extract the constants (client IDs are stored with
-  // the trailing ".com" stripped; Google client IDs always end with
-  // ".apps.googleusercontent.com").
-  const bin = await readFile(agyPath);
-  const text = bin.toString("latin1");
-
-  let clientId = env.clientId;
-  let clientSecret = env.clientSecret;
-
-  if (!clientId) {
-    // 13-digit Google OAuth client id used for Antigravity auth, then the
-    // secret right after it in the binary.
-    const idMatch = text.match(
-      /(\d{13}-[a-zA-Z0-9]+\.apps\.googleusercontent\.)(?=com)/,
-    );
-    if (idMatch) clientId = idMatch[1] + "com";
-  }
-  if (!clientSecret) {
-    const secMatch = text.match(/GOCSPX-([A-Za-z0-9_-]{20,40}?)(?=GOCSPX|https|$)/);
-    if (secMatch) clientSecret = "GOCSPX-" + secMatch[1];
-  }
-
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      "Could not extract Antigravity OAuth client credentials from agy binary. " +
-        "Set ANTIGRAVITY_CLIENT_ID and ANTIGRAVITY_CLIENT_SECRET env vars.",
-    );
-  }
-  return { clientId, clientSecret };
-}
-
-/** Refresh the OAuth access token using the stored refresh token. */
-async function refreshToken(refreshToken) {
-  const { clientId, clientSecret } = await getClientCredentials();
-  const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-  });
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  if (!res.ok) {
-    throw new Error(`Token refresh failed (${res.status}). Re-run \`agy\` login.`);
-  }
-  const data = await res.json();
-  return data.access_token;
-}
-
-/** Read the Antigravity CLI's OAuth creds from the macOS Keychain. */
-async function getAuth() {
-  let out;
+/** Read the Antigravity CLI's OAuth access token from the macOS Keychain. */
+async function getAccessToken() {
+  let stdout;
   try {
-    ({ stdout: out } = await execFileAsync("security", [
+    ({ stdout } = await execFileAsync("security", [
       "find-generic-password",
       "-s",
       "gemini",
@@ -161,30 +80,20 @@ async function getAuth() {
   }
 
   const prefix = "go-keyring-base64:";
-  if (!out.startsWith(prefix)) {
+  if (!stdout.startsWith(prefix)) {
     throw new Error("Unexpected Keychain value for Antigravity auth.");
   }
-  const b64 = out.slice(prefix.length).trim() + "=".repeat(
-    (-out.slice(prefix.length).trim().length) % 4,
+  const b64 = stdout.slice(prefix.length).trim();
+  const data = JSON.parse(
+    Buffer.from(b64 + "=".repeat((-b64.length) % 4), "base64").toString("utf8"),
   );
-  const data = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-  const token = data?.token;
-  if (!token?.access_token || !token?.refresh_token) {
-    throw new Error("Antigravity Keychain entry missing tokens. Re-run `agy` login.");
+  const accessToken = data?.token?.access_token;
+  if (!accessToken) {
+    throw new Error(
+      "Antigravity Keychain entry missing access token. Re-run `agy` login.",
+    );
   }
-  return token;
-}
-
-
-
-/** Get a valid access token, refreshing if expired. */
-async function getAccessToken() {
-  const auth = await getAuth();
-  const expiry = auth.expiry ? new Date(auth.expiry) : null;
-  if (!expiry || expiry.getTime() - Date.now() < 60_000) {
-    return await refreshToken(auth.refresh_token);
-  }
-  return auth.access_token;
+  return accessToken;
 }
 
 /** Fetch the Antigravity project id (cloudaicompanionProject) for the account. */
@@ -254,7 +163,11 @@ async function ask(token, projectId, imagePaths, prompt) {
       const err = JSON.parse(raw)?.error;
       if (err?.message) msg = err.message.split("\n")[0];
     } catch {}
-    const err = new Error(`API error (${res.status}): ${msg}`);
+    const err = new Error(
+      res.status === 401
+        ? "Antigravity login expired. Run `agy` once to refresh, then retry."
+        : `API error (${res.status}): ${msg}`,
+    );
     err.status = res.status;
     throw err;
   }

@@ -22,7 +22,7 @@ The prompt is optional — defaults to `Describe what you see in this image.`
 
 ## How it works
 
-Auth comes from the same macOS Keychain item the Antigravity CLI writes (service `gemini`, account `antigravity`): an OAuth access token plus a refresh token. If the access token is expired, it is refreshed via the Google OAuth endpoint using the product's public OAuth client credentials, which are read from the installed `agy` binary at runtime (override with `ANTIGRAVITY_CLIENT_ID` / `ANTIGRAVITY_CLIENT_SECRET` env vars). Then:
+Auth comes from the same macOS Keychain item the Antigravity CLI writes (service `gemini`, account `antigravity`), read via `security` — the same "reuse your existing login" idea as codex-eyes reading `~/.codex/auth.json`. Then:
 
 1. `POST cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` → gets the account's `cloudaicompanionProject`.
 2. `POST daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse` → sends prompt + images as base64 `inlineData`, with `generationConfig.thinkingConfig.thinkingLevel: "LOW"` (the API's no-reasoning floor — `NONE` is rejected, and `thinkingBudget: 0` still spends thought tokens).
@@ -30,6 +30,8 @@ Auth comes from the same macOS Keychain item the Antigravity CLI writes (service
 We use plain HTTPS/SSE, not the WebSocket transport the Antigravity IDE prefers. The model is `gemini-3.7-flash-tiered` ("tiered" = reasoning level is set per request rather than baked into the model id). Free tier quota is a weekly token budget shared across Gemini models; the CLI's `/usage` command shows the remaining fraction.
 
 Deliberately no retries, no fallback chain, no waiting inside the script — one attempt, a clear error with exit code, and the agent decides what to do next (e.g. re-run later). Exit codes: `0` answered, `1` usage/auth/fatal error, `2` quota or transient overload.
+
+The Antigravity access token expires roughly hourly; if the API returns 401, the script says so and you just run `agy` once (any command refreshes the stored token), then retry.
 
 ## License
 
