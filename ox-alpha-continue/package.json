@@ -1,0 +1,14 @@
+{
+  "name": "@winds-ai/pi-ox-alpha-continue",
+  "version": "0.1.0",
+  "description": "Keep the agent loop alive when OX-Alpha ends a turn with an empty stop response",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "extension", "ox-alpha", "retry", "workaround"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
