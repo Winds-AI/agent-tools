@@ -1,14 +1,23 @@
 {
   "name": "@winds-ai/pi-ox-alpha-continue",
-  "version": "0.1.0",
-  "description": "Keep the agent loop alive when OX-Alpha ends a turn with an empty stop response",
+  "version": "0.2.0",
+  "description": "Keep the agent loop alive when OX-Alpha drops a turn (empty stop or transient ERROR/SSE failure)",
   "type": "module",
   "license": "MIT",
-  "keywords": ["pi-package", "pi-coding-agent", "extension", "ox-alpha", "retry", "workaround"],
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "extension",
+    "ox-alpha",
+    "retry",
+    "workaround"
+  ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }
