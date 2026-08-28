@@ -1,0 +1,504 @@
+==============================================================================
+ADDING MODEL PROVIDERS TO PI — OPERATIONS GUIDE
+Location: ~/.pi/agent/PROVIDERS.txt
+Maintainer note: update the "verified" date when you re-check facts.
+Last verified against pi 0.84.3 on 2026-08-28 (run `pi --version` to compare).
+==============================================================================
+
+PURPOSE
+  Teach any human or agent how to register a model provider + its models in
+  the pi coding agent so they work correctly across the agentic loop
+  (streaming, thinking levels, tool calls, compaction, cost tracking).
+
+PHILOSOPHY (Unix)
+  Models are DATA, not code. Everything below is achieved with one
+  declarative file (models.json) + small shell scripts. Only reach for an
+  extension (see custom-provider.md) when you need OAuth flows — API-key
+  providers never need one.
+
+  Warning: multiple community extensions may register the SAME provider id
+  (e.g. "crofai"). Before adding a provider id, check for clashes:
+      ls ~/.pi/agent/extensions/ && cat ~/.pi/agent/settings.json
+  Remove or rename clashing extensions first.
+
+------------------------------------------------------------------------------
+1. FILE PATHS — WHERE THINGS LIVE AND WHERE THE DOCS ARE
+------------------------------------------------------------------------------
+
+YOUR CONFIG (the only files you edit)
+  ~/.pi/agent/models.json     Custom providers + models. Declarative. Pure JSON
+                              (NO comments). Reloads live when you open /model
+                              — no restart needed.
+  ~/.pi/agent/auth.json       Credentials, written by `/login`. Do not hand-edit
+                              secrets; use /login or env vars.
+  ~/.pi/agent/settings.json   Default provider/model, retry policy, packages.
+  ~/.pi/agent/extensions/     TypeScript extensions (only for OAuth-class needs).
+
+FIND THE PI INSTALL (paths below use $PI; recompute if missing)
+  PI=$(npm root -g)/@earendil-works/pi-coding-agent
+  (on this machine:
+   /home/meet/.nvm/versions/node/v24.18.1/lib/node_modules/
+   @earendil-works/pi-coding-agent)
+
+REFERENCE DOCS (read these before inventing syntax)
+  $PI/docs/models.md            PRIMARY. Full models.json reference: provider
+                                fields, model fields, value resolution ($ENV,
+                                !command), thinkingLevelMap semantics, compat
+                                tables, merge/modelOverrides semantics.
+  $PI/docs/custom-provider.md   Extension form (createProvider, auth.apiKey,
+                                OAuth, fetchModels). Only for OAuth flows.
+  $PI/docs/extensions.md        Extension discovery, /reload, events.
+  $PI/docs/settings.md          Defaults, retry config.
+  $PI/docs/providers.md         Built-in provider list.
+
+ENGINE SOURCE (ground truth when docs and behavior disagree)
+  $PI/node_modules/@earendil-works/pi-ai/dist/providers/data/*.json
+                                Built-in catalogs — COPY-TESTED examples of
+                                every field (groq.json, zai.json, deepseek.json,
+                                openai.json, anthropic.json ...). If pi ships a
+                                model of the same family, crib its entry.
+  $PI/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+                                How thinkingFormat / compat flags are actually
+                                sent on the wire (grep for "thinkingFormat").
+  $PI/node_modules/@earendil-works/pi-ai/dist/types.d.ts
+                                The Model / compat type definitions.
+  $PI/dist/core/extensions/types.d.ts
+                                registerProvider contract (extension form).
+  $PI/examples/extensions/custom-provider-anthropic/
+                                Complete extension example (OAuth + stream).
+
+SESSION FORENSICS (for verification)
+  ~/.pi/agent/sessions/<cwd-slug>/<timestamp>_<uuid>.jsonl
+                                Per-turn assistant messages carry usage + cost.
+  /model footer                 Live token + cost display.
+
+ONLINE
+  https://pi.dev/packages       Community package catalog (check for an
+                                existing provider extension before building).
+
+------------------------------------------------------------------------------
+2. REGISTRATION CHECKLIST — WHAT A MODEL NEEDS TO WORK IN THE AGENTIC LOOP
+------------------------------------------------------------------------------
+Three layers. A model that skips a layer doesn't fail loudly — it misfires
+mid-loop (truncated tool calls, silently dropped images, wrong compaction).
+Fill every row per model.
+
+2.1 IDENTITY (without these, nothing works)
+  +----------------+----------------------+----------------------------------+
+  | Field          | Where                | Purpose                          |
+  +----------------+----------------------+----------------------------------+
+  | id             | model                | String sent to the API as the    |
+  |                |                      | model name; /model selector key. |
+  | baseUrl        | provider or model    | Endpoint, e.g. https://crof.ai/  |
+  |                |                      | v1 (include /v1 for OpenAI-style)|
+  | api            | provider or model    | Streaming engine:                |
+  |                |                      |   openai-completions  (default   |
+  |                |                      |     choice, most compatible)     |
+  |                |                      |   anthropic-messages (Claude +   |
+  |                |                      |     Anthropic-compatible)        |
+  |                |                      |   openai-responses               |
+  |                |                      |   google-generative-ai           |
+  | auth           | provider             | ONE of:                          |
+  |                |                      |   a) "apiKey": "$MY_ENV_VAR"     |
+  |                |                      |      (also "!cmd ...", literal)  |
+  |                |                      |   b) /login -> "Use an API key"  |
+  |                |                      |      -> select provider -> paste |
+  |                |                      |      (stored in auth.json)       |
+  |                |                      |   c) pi --api-key (one-shot)     |
+  |                |                      | Unauthenticated models LOAD but  |
+  |                |                      | stay HIDDEN from /model and      |
+  |                |                      | --list-models. Local keyless     |
+  |                |                      | servers: dummy apiKey value.     |
+  +----------------+----------------------+----------------------------------+
+
+2.2 METADATA (wrong values = subtle agentic-loop breakage)
+  +----------------+---------------------+-----------------------------------+
+  | Field          | Default             | Failure mode when wrong           |
+  +----------------+---------------------+-----------------------------------+
+  | contextWindow  | 128000              | Too LOW -> constant premature     |
+  |                |                     | compaction, lost context. Too HIGH|
+  |                |                     | -> provider overflow errors (pi's |
+  |                |                     | auto-compact triggers off its own |
+  |                |                     | count, so keep it truthful).      |
+  | maxTokens      | 16384               | Too low -> truncated answers,     |
+  |                |                     | tool-call JSON cut mid-stream.    |
+  |                |                     | Use the provider's real max       |
+  |                |                     | completion/output.                |
+  | input          | ["text"]            | MUST be only what is verified.    |
+  |                |                     | Missing "image" on a vision model |
+  |                |                     | -> images silently never sent.    |
+  |                |                     | Declared on non-vision -> API 400 |
+  |                |                     | mid-loop. See 4.1.                |
+  | reasoning      | false               | true requires correct thinking    |
+  |                |                     | flags (2.3) or you get 400s /     |
+  |                |                     | always-on thinking.               |
+  | name           | id                  | Only affects --model pattern      |
+  |                |                     | matching + display detail text.   |
+  | cost           | all zeros           | Never breaks the loop; powers     |
+  |                |                     | usage/cost display. See 3.3.      |
+  | samplingParams | omitted             | Optional verbatim body fields     |
+  |                |                     | (top_k, min_p). Only when needed. |
+  +----------------+---------------------+-----------------------------------+
+
+2.3 BEHAVIORAL COMPAT — the part that actually bites
+  Thinking models — how the reasoning toggle reaches the API:
+  +--------------------------------------------+------------------------------+
+  | Field                                      | Set when                     |
+  +--------------------------------------------+------------------------------+
+  | thinkingLevelMap                           | Always for reasoning models. |
+  |   keys: off minimal low medium high        | Values: string = supported,  |
+  |   xhigh max (values: string|null)          | sends that value; null =     |
+  |                                            | unsupported, hidden from UI; |
+  |                                            | omitted key = pi default     |
+  |                                            | mapping (through high only;  |
+  |                                            | xhigh/max unavailable).      |
+  | compat.thinkingFormat                      | Wire format for the toggle:  |
+  |                                            |   zai      GLM/Z.ai:         |
+  |                                            |            thinking:{type:   |
+  |                                            |            enabled|disabled} |
+  |                                            |   deepseek, openrouter,      |
+  |                                            |   together, qwen,            |
+  |                                            |   qwen-chat-template,        |
+  |                                            |   chat-template, baseten     |
+  |                                            |   openai = reasoning_effort  |
+  |                                            | Wrong format = 400s or       |
+  |                                            | thinking stuck on/off.       |
+  | compat.supportsReasoningEffort             | Endpoint honors              |
+  |                                            | reasoning_effort.            |
+  | compat.thinkingTokenBudgetField            | vLLM "thinking_token_budget",|
+  |                                            | Qwen "thinking_budget",      |
+  |                                            | llama.cpp                    |
+  |                                            | "thinking_budget_tokens".    |
+  +--------------------------------------------+------------------------------+
+
+  OpenAI-compatible endpoints — request-shape flags (set at provider level,
+  override per model when a model differs):
+  +----------------------------------------------+----------------------------+
+  | Flag                                         | Set when                   |
+  +----------------------------------------------+----------------------------+
+  | maxTokensField: "max_tokens"                 | Endpoint rejects           |
+  |                                              | max_completion_tokens      |
+  |                                              | (silently ignores it too — |
+  |                                              | test both).                |
+  | supportsDeveloperRole: false                 | No "developer" role; system|
+  |                                              | prompt must go as "system".|
+  | supportsStore: false                         | Rejects "store" field.     |
+  | supportsUsageInStreaming: false              | No stream_options          |
+  |                                              | {include_usage:true}.      |
+  | supportsFinishReason: false                  | Streams never emit         |
+  |                                              | finish_reason (pi infers). |
+  | requiresToolResultName: true                 | Tool results need name.    |
+  | requiresAssistantAfterToolResult: true       | Replay-order quirk.        |
+  | requiresThinkingAsText: true                 | Thinking must replay as    |
+  |                                              | plain text.                |
+  | requiresReasoningContentOnAssistantMessages | Empty reasoning_content    |
+  |                                              | must be echoed on replay.  |
+  | cacheControlFormat: "anthropic"              | Anthropic-style cache      |
+  |                                              | markers on an OpenAI API.  |
+  +----------------------------------------------+----------------------------+
+
+  anthropic-messages endpoints:
+    forceAdaptiveThinking   (new Claude thinking: thinking.type adaptive)
+    allowEmptySignature     (endpoint emits empty thinking signatures)
+    supportsEagerToolInputStreaming: false (rejects per-tool streaming field)
+    supportsStrictTools: true (accepts strict JSON-schema tools)
+    supportsLongCacheRetention (cache_control.ttl 1h)
+
+2.4 WHAT YOU GET FOR FREE (never reimplement)
+  Streaming text/thinking/toolcall events, tool-call + result replay,
+  auto-compaction + single retry on context overflow (requires truthful
+  contextWindow), retry-with-backoff on transient errors, thinking-level
+  cycling/clamping, cost accounting, session persistence.
+
+------------------------------------------------------------------------------
+3. WORKFLOW — ADDING A NEW PROVIDER END TO END
+------------------------------------------------------------------------------
+
+3.1 PROBE THE PROVIDER (gather facts, do not guess)
+  List models:
+    curl -s https://HOST/v1/models -H "Authorization: Bearer $KEY" | jq .
+  Grade what came back. Reality check (verified 2026-08-28):
+    +----------------+------------+---------+---------+----------+---------+
+    | Endpoint       | ids        | ctx win | max out | pricing  | reasoning|
+    +----------------+------------+---------+---------+----------+---------+
+    | CrofAI         | yes        | yes     | yes     | yes      | flags   |
+    |  /v1/models    |            |         |         |          | only    |
+    | Groq           | yes        | NO      | NO      | NO       | NO      |
+    | Command Code   | yes + name | yes     | NO      | subscr.$0| NO      |
+    +----------------+------------+---------+---------+----------+---------+
+  Missing fields -> curate from the provider's docs/pricing page, or probe.
+  Everything that cannot be discovered gets hand-curated. That is the job.
+
+  Behavioral probes (run once per family, paste the winning values into
+  models.json; each probe is one curl):
+    a) max_tokens vs max_completion_tokens: which is accepted?
+    b) developer vs system role: send role "developer", expect 200
+    c) stream_options {include_usage:true}: accepted? usage in stream?
+    d) reasoning toggle: try compat style + reasoning_effort low/high/max
+       (or thinking:{type:enabled|disabled} for zai). Record which levels
+       change reasoning_tokens in usage.
+    e) tool call: send a trivial function tool; require a tool_call in the
+       reply (this is the agentic-loop gate).
+    f) vision (only if the provider claims it): send a small image_url;
+       a 400 here means do NOT declare "image" input.
+
+3.2 CURATE models.json (one block per provider, one entry per model)
+  Blank template — copy, fill every key deliberately:
+
+    {
+      "providers": {
+        "PROVIDER_ID": {
+          "name": "Human Name",
+          "baseUrl": "https://HOST/v1",
+          "api": "openai-completions",
+          "apiKey": "$PROVIDER_API_KEY",
+          "compat": { "supportsStore": false, "supportsDeveloperRole": false,
+                      "maxTokensField": "max_tokens" },
+          "models": [
+            {
+              "id": "model-id-from-api",
+              "name": "Vendor: Model Name",
+              "reasoning": true,
+              "input": ["text"],
+              "cost": { "input": 0.00, "output": 0.00,
+                        "cacheRead": 0.00, "cacheWrite": 0 },
+              "contextWindow": 1000000,
+              "maxTokens": 131072,
+              "thinkingLevelMap": { "off": "none", "minimal": null,
+                                    "low": "low", "medium": null,
+                                    "high": "high", "xhigh": null,
+                                    "max": "max" },
+              "compat": { "supportsReasoningEffort": true,
+                          "thinkingFormat": "zai" }
+            }
+          ]
+        }
+      }
+    }
+
+  Rules:
+  - Pure JSON: no comments, no trailing commas.
+  - Merge semantics: "models" on a BUILT-IN provider id (groq, anthropic...)
+    UPSERTS by id alongside built-ins; use "modelOverrides" to tweak built-in
+    entries without redefining them. New provider ids must not clash with
+    extensions (see PURPOSE).
+  - Provider-level compat = defaults; model-level compat overrides per model.
+
+3.3 PRICING (powers usage display; never affects requests)
+  +--------------+----------------------------------------------------------+
+  | Source       | Rule                                                     |
+  +--------------+----------------------------------------------------------+
+  | Provider API | Best. Units are usually $/Mtoken already — VERIFY by     |
+  |              | comparing one field against the pricing page. CrofAI     |
+  |              | and OpenRouter are $/M; some APIs return $/token (then   |
+  |              | multiply by 1_000_000).                                  |
+  | Pricing page | Scrape manually ONCE into the file. Do not build a       |
+  |              | runtime scraper (they redesign pages; scrapers silently  |
+  |              | go stale — proven failure in the wild).                  |
+  | Subscription | cost all zeros (Command Code, Coding-plan-style auth).   |
+  | Unknown      | zeros are acceptable; note it.                           |
+  +--------------+----------------------------------------------------------+
+  Fields: input, output, cacheRead (discounted cached-prompt reads),
+  cacheWrite (0 on most providers), optional cost.tiers for long-context
+  step pricing (see models.md "cost tiers").
+
+3.4 THINKING LEVELS (build from probe (d), per model not per provider)
+  pi levels: off, minimal, low, medium, high, xhigh, max.
+  - Set "reasoning": true ONLY for models that actually think.
+  - Map only levels the probe honored; null the rest (they vanish from the
+    /model level picker and get clamped).
+  - Non-reasoning model: omit thinkingLevelMap entirely, keep reasoning false,
+    and do NOT give it a thinkingFormat.
+  - Anthropic-Claude via anthropic-messages: pi handles adaptive thinking on
+    built-ins; custom endpoints need compat.forceAdaptiveThinking: true.
+
+3.5 VERIFY — AGENTIC LOOP GAUNTLET (all six, in order)
+  KEY=$PROVIDER_API_KEY   (or have /login already done)
+  1) Catalog renders:
+       pi --list-models PROVIDER_ID
+     -> columns sane: context window, max-out, thinking yes/no, images yes/no.
+  2) Plain completion (streams, ends cleanly):
+       pi -p --no-session --model PROVIDER_ID/MODEL \
+         "What is 6*7? Just the number."
+  3) Every declared thinking level:
+       pi -p --no-session --model PROVIDER_ID/MODEL:low   "..."
+       pi -p --no-session --model PROVIDER_ID/MODEL:high  "..."
+       pi -p --no-session --model PROVIDER_ID/MODEL:max   "..."
+     -> no 400s; reasoning appears where declared; OFF stays off where
+        thinkingLevelMap maps off.
+  4) Tool use (the real agentic-loop test — call AND result replay):
+       pi -p --no-session --model PROVIDER_ID/MODEL \
+         "Create /tmp/pi-test.txt containing 'ok', then confirm it exists."
+     -> file exists; no error blocks; assistant references the result.
+  5) Cost/usage sanity:
+       run WITH a session, then check the newest
+       ~/.pi/agent/sessions/<slug>/*.jsonl for assistant usage: input, output,
+       cacheRead, cost.total all non-zero (or zero if costs are 0).
+  6) Vision (only if "image" is declared):
+       pi -p --no-session --model PROVIDER_ID/MODEL /path/to/image.png \
+         "What is in this image?"
+     If you cannot test vision, do not declare "image".
+
+  A model that passes 1-5 is agentic-loop correct. Fix failures at the
+  compat-flag level, not with scripts.
+
+3.6 MAINTENANCE — REFETCH WITHOUT COMPLEXITY
+  One small script per provider in ~/.pi/agent/bin/ (chmod +x). Shape:
+    - curl the provider's /models
+    - jq: update ONLY authoritative fields (contextWindow, maxTokens, cost)
+      in models.json, IN PLACE
+    - PRINT new/removed model ids as a diff report; never auto-invent full
+      entries for unknown models — they get curated by a human/agent using
+      section 2 and 3
+  Run it manually whenever you suspect drift (new model launches, price
+  changes). Cron is optional and usually unnecessary.
+
+------------------------------------------------------------------------------
+4. EDGE CASES (the reasons the gauntlet exists)
+------------------------------------------------------------------------------
+4.1 IMAGES — text and image are the ONLY supported modalities (no video/audio
+    in pi; do not attempt it in models.json).
+    - "input": ["text","image"] ONLY after the probe in 3.1(f) passes.
+    - Under-declaring is silent: the read tool attaches images and pi drops
+      them without telling you; the model just answers "I see no image".
+    - Over-declaring is loud but late: 400 errors mid-conversation.
+    - Images can also arrive inside tool results; the same input declaration
+      gates both paths.
+4.2 CONTEXT OVERFLOW: pi auto-compacts + retries ONCE when its own token count
+    crosses contextWindow. If the provider errors BEFORE that (your
+    contextWindow is too high), you get raw provider errors instead.
+    Keep contextWindow truthful.
+4.3 MAXTOKENS: pi reserves thinking room against maxTokens; too-small values
+    truncate tool-call JSON (unparseable arguments, silent tool failure).
+    Use the provider's real output limit.
+4.4 STREAM QUIRKS: endpoints without stream_options usage ->
+    supportsUsageInStreaming: false; without finish_reason ->
+    supportsFinishReason: false. Symptoms: missing cost data / hangs at end
+    of turn.
+4.5 REASONING REPLAY: some gateways require thinking blocks replayed as text
+    (requiresThinkingAsText) or empty reasoning_content echoed back
+    (requiresReasoningContentOnAssistantMessages); Anthropic-compatible ones
+    may need allowEmptySignature. Symptom: errors on the SECOND turn of a
+    conversation, not the first.
+4.6 PROVIDER-SIDE FILTERING: /models may list models your plan/key cannot use
+    (subscription tiers, region locks, bot-flagged 429 accounts — CrofAI does
+    this). Probe each curated model once (gauntlet step 2); drop the 403s.
+4.7 NON-CHAT MODELS: embedding/rerank/audio models (nomic-embed, whisper...)
+    do NOT belong in models.json — pi is a chat/agentic harness.
+4.8 QUANTIZATION/QUALITY: providers serving open-weight models may run
+    Q4/Q8/mxfp4 variants (CrofAI does). Same id = same quality tier always;
+    if a quant matters to you, note it in the model "name".
+4.9 KEY RESOLUTION GOTCHAS: "$$" -> literal $, "$!" -> literal !;
+    "PLAINNAME" without $ is a LITERAL string, not an env var (classic bug:
+    apiKey: "CROF_API_KEY" sends that literal as the Bearer token).
+    /model availability checks never execute "!command" values.
+4.10 NAME MATCHING: "name" feeds --model pattern matching; the id is what the
+     footer shows. Renaming changes matching behavior.
+
+------------------------------------------------------------------------------
+5. WORKED EXAMPLE — CrofAI (verified live 2026-08-28)
+------------------------------------------------------------------------------
+  Facts discovered by probing (see 3.1): /v1/models is rich (ids, context,
+  max output, $/M pricing, reasoning flags); vision list only exists in the
+  pricing page source (JS const visionModels = [...]); thinking toggle is
+  zai-style and reasoning_effort low/high/max accepted by ALL reasoning
+  families; max_tokens (not max_completion_tokens); no developer role.
+
+  Probe one-liners that produced those facts:
+    curl -s https://crof.ai/v1/models | jq '.data[0]'
+    curl -s https://crof.ai/v1/chat/completions -H "Authorization: Bearer $KEY" \
+      -H 'Content-Type: application/json' -d '{
+        "model":"glm-5.3-flash",
+        "messages":[{"role":"user","content":"Say OK"}],
+        "max_tokens":1024, "reasoning_effort":"high", "stream":false}'
+    # swap reasoning_effort values; then add "tools":[...] for the tool probe.
+
+  Resulting provider block (trimmed to 3 models showing the three shapes:
+  reasoning-text, reasoning-vision, plain):
+    "crofai": {
+      "name": "CrofAI",
+      "baseUrl": "https://crof.ai/v1",
+      "apiKey": "$CROFAI_API_KEY",
+      "api": "openai-completions",
+      "compat": { "supportsStore": false, "supportsDeveloperRole": false,
+                  "supportsReasoningEffort": true,
+                  "maxTokensField": "max_tokens", "thinkingFormat": "zai" },
+      "models": [
+        { "id": "glm-5.3-flash", "name": "GLM 5.3 Flash",
+          "reasoning": true, "input": ["text"],
+          "cost": { "input": 0.07, "output": 0.22,
+                    "cacheRead": 0.01, "cacheWrite": 0 },
+          "contextWindow": 1000000, "maxTokens": 131072,
+          "thinkingLevelMap": { "off": "none", "minimal": null, "low": "low",
+                                "medium": null, "high": "high",
+                                "xhigh": null, "max": "max" } },
+        { "id": "kimi-k2.6", "name": "Kimi K2.6",
+          "reasoning": true, "input": ["text", "image"],
+          "cost": { "input": 0.5, "output": 1.99,
+                  "cacheRead": 0.05, "cacheWrite": 0 },
+          "contextWindow": 262144, "maxTokens": 262144,
+          "thinkingLevelMap": { "off": "none", "minimal": null, "low": "low",
+                                "medium": null, "high": "high",
+                                "xhigh": null, "max": "max" } },
+        { "id": "deepseek-v3.2", "name": "DeepSeek V3.2",
+          "reasoning": false, "input": ["text"],
+          "cost": { "input": 0.18, "output": 0.35,
+                  "cacheRead": 0.04, "cacheWrite": 0 },
+          "contextWindow": 163840, "maxTokens": 163840 }
+      ]
+    }
+  (Full 22-model catalog available from the /v1/models endpoint at any time.)
+
+------------------------------------------------------------------------------
+6. PROVIDER NOTES (curated knowledge, verified 2026-08-28)
+------------------------------------------------------------------------------
+  CROFAI (crof.ai / ai.nahcrof.com)
+    Endpoint   https://crof.ai/v1            Auth: nahcrof_... bearer key
+    /models    RICH (id, name, context_length, max_completion_tokens,
+               pricing.prompt/completion/cache_prompt in $/M,
+               reasoning_effort flag, quantization, speed)
+    Vision     NOT in /models; only in pricing-page source (visionModels arr)
+    Thinking   zai format + reasoning_effort (low/high/max, all families)
+    Refetch    scripts can auto-update ~95% of fields; vision + effort maps
+               stay curated. Some accounts get bot-flagged (all-429) — support
+               unbloats on contact.
+
+  GROQ (api.groq.com)
+    Endpoint   https://api.groq.com/openai/v1 (built-in provider id "groq")
+    /models    THIN: only id/created/owned_by. No ctx, no max-out, no prices,
+               no reasoning info.
+    Specs      console.groq.com/docs/models (JS-rendered Next.js; scrape
+               carefully or transcribe manually).
+    Preferred  Do NOT create a new provider id. Extend the built-in "groq"
+               via models.json merge ("models" upserts) or "modelOverrides".
+    Note       pi's built-in groq.json is itself a tiny hand-curated list —
+               proof that curation is the intended path for thin APIs.
+
+  COMMAND CODE (api.commandcode.ai) — subscription
+    /models    /provider/v1/models: id, name, context_length ONLY. No prices
+               (subscription = $0), no reasoning, no modality.
+    Routing    claude-* models use anthropic-messages at
+               https://api.commandcode.ai/provider ; everything else
+               openai-completions at /provider/v1. Set "api" per model.
+    Plan rules + reasoning maps are curation, not API data. The existing
+    extension ~/.pi/agent/extensions/command-code.ts already implements
+    plan-filtering + routing; keep it unless you accept manual curation of
+    your plan's model list.
+
+  GENERIC OPENAI-COMPATIBLE (vLLM, Ollama, LM Studio, llama.cpp, proxies)
+    Start with the minimal example in models.md; set compat
+    supportsDeveloperRole/supportsReasoningEffort false until proven otherwise;
+    consider thinkingTokenBudgetField for local reasoning runtimes.
+
+------------------------------------------------------------------------------
+QUICK REFERENCE CARD (copy into your context when doing this task)
+------------------------------------------------------------------------------
+  1. Check provider-id clashes (extensions + settings.json packages)
+  2. curl /models -> grade richness -> probe behavior (3.1 a-f)
+  3. Write provider block into ~/.pi/agent/models.json (2.2 + 2.3 fields,
+     truth values only; pricing per 3.3; thinking maps per 3.4)
+  4. Auth: /login -> "Use an API key" -> select provider (or $ENV var)
+  5. Run the gauntlet (3.5): list, complete, levels, tools, cost, vision
+  6. If refetch script exists: run it; curate the reported diff (sections 2-3)
+  7. Record provider-specific knowledge in section 6 of this file
+==============================================================================
