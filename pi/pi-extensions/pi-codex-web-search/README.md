@@ -11,11 +11,18 @@ As of August 17, 2026, the new standalone WebRun tool (`web/run`) is still exper
 Requires Node.js 22+ and an authenticated Codex CLI (`codex login`).
 
 ```bash
-git clone https://github.com/Winds-AI/pi-extensions.git
-pi install ./pi-extensions/codex-web-search
+pi install git:github.com/Winds-AI/agent-tools
 ```
 
-Restart pi after installation.
+To install only this extension from a local clone:
+
+```bash
+git clone https://github.com/Winds-AI/agent-tools.git
+cd agent-tools
+pi install ./pi/pi-extensions/pi-codex-web-search
+```
+
+Restart Pi after installation.
 
 ## Tool: `web_search`
 

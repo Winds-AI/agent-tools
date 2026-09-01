@@ -5,10 +5,10 @@ A model picker for [pi](https://pi.dev) with your **favorite models pinned to th
 ## Install
 
 ```bash
-pi install git:github.com/Winds-AI/pi-extensions@v0.1.0
+pi install git:github.com/Winds-AI/agent-tools
 ```
 
-> Installing from this repo loads all Winds AI pi extensions. To use only this one, copy `index.ts` into `~/.pi/agent/extensions/`.
+Installing the repository loads the collection. To install only this extension from a local clone, use `pi install ./pi/pi-extensions/pi-model-favorites`.
 
 ## Usage
 

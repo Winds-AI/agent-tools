@@ -20,7 +20,7 @@ import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent
 const HOST = "127.0.0.1";
 const TIMEOUT_MS = 60 * 60 * 1000; // auto-cancel a review left open for an hour
 const MAX_BODY_BYTES = 1024 * 1024;
-const STATUS_KEY = "browser-comment";
+const STATUS_KEY = "pi-browser-comment";
 
 const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "web");
 

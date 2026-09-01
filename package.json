@@ -1,0 +1,33 @@
+{
+  "name": "agent-tools",
+  "version": "0.1.0",
+  "description": "Standalone agent tools and Pi extensions from Winds AI",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-coding-agent", "agent-tools"],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./pi/pi-extensions/pi-browser-comment/index.ts",
+      "./pi/pi-extensions/pi-codex-web-search/index.ts",
+      "./pi/pi-extensions/pi-exa-web/index.ts",
+      "./pi/pi-extensions/pi-model-favorites/index.ts",
+      "./pi/pi-extensions/pi-sticky/index.ts",
+      "./pi/pi-extensions/pi-tps-tracker/index.ts",
+      "./pi/pi-extensions/pi-user-message-navigation/index.ts",
+      "./pi/pi-extensions/raw-probe/index.ts"
+    ]
+  }
+}

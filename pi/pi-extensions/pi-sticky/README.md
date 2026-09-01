@@ -15,10 +15,9 @@ It intentionally removes all keyboard scrolling and shortcut-matching functional
 Clone the collection, then install this package by local path:
 
 ```bash
-git clone https://github.com/Winds-AI/pi-extensions.git
-pi install ./pi-extensions/pi-sticky
+pi install git:github.com/Winds-AI/agent-tools
 ```
 
-Restart Pi after installation.
+To install only this extension from a local clone, use `pi install ./pi/pi-extensions/pi-sticky` from the repository root. Restart Pi after installation.
 
 Based on [`@burneikis/pi-sticky`](https://github.com/burneikis/pi-sticky). See [LICENSE](LICENSE) for upstream and third-party attribution.

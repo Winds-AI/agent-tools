@@ -9,11 +9,10 @@ Designed for probing what a model natively knows, how it reasons, and how it beh
 Clone the collection, then install this package by local path:
 
 ```bash
-git clone https://github.com/Winds-AI/pi-extensions.git
-pi install ./pi-extensions/raw-probe
+pi install git:github.com/Winds-AI/agent-tools
 ```
 
-Restart Pi after installation.
+To install only this extension from a local clone, use `pi install ./pi/pi-extensions/raw-probe` from the repository root. Restart Pi after installation.
 
 To use the extension directly without installing, copy `index.ts` into `~/.pi/agent/extensions/`.
 

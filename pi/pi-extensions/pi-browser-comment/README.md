@@ -6,14 +6,21 @@ as centered markdown via the vendored `marked` library.
 
 ## Install
 
-Clone the collection, then install this package by local path:
+Install the collection directly from GitHub:
 
 ```bash
-git clone https://github.com/Winds-AI/pi-extensions.git
-pi install ./pi-extensions/browser-comment
+pi install git:github.com/Winds-AI/agent-tools
 ```
 
-Restart Pi after installation.
+To install only this extension from a local clone:
+
+```bash
+git clone https://github.com/Winds-AI/agent-tools.git
+cd agent-tools
+pi install ./pi/pi-extensions/pi-browser-comment
+```
+
+Restart Pi after installation. The extension is exposed from `pi/pi-extensions/pi-browser-comment/index.ts`.
 
 ## Usage
 
@@ -63,7 +70,7 @@ general feedback
 ## Layout
 
 ```text
-browser-comment/
+pi-browser-comment/
   index.ts              # command, branch walk, review server, formatting
   web/
     index.html          # single page: inline CSS + JS + marked
@@ -75,6 +82,6 @@ browser-comment/
 ## Smoke test
 
 ```bash
-cd extensions/browser-comment
+cd pi/pi-extensions/pi-browser-comment
 npx --yes tsx scripts/smoke-ts.ts
 ```
