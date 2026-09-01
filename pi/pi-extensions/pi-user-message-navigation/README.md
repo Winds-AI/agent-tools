@@ -15,7 +15,9 @@ The selected user message is moved into Pi's editor, matching native `/tree` sem
 Clone the collection, then install this package by local path:
 
 ```bash
-pi install git:github.com/Winds-AI/agent-tools
+git clone https://github.com/Winds-AI/agent-tools.git
+cd agent-tools
+pi install ./pi/pi-extensions/pi-user-message-navigation
 ```
 
-To install only this extension from a local clone, use `pi install ./pi/pi-extensions/pi-user-message-navigation` from the repository root. Restart Pi after installation. Command-arrow forwarding may also need to be configured in the terminal.
+Restart Pi after installation. Command-arrow forwarding may also need to be configured in the terminal.

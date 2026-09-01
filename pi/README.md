@@ -1,7 +1,7 @@
 # Pi resources
 
-Pi extensions live in [`pi-extensions`](pi-extensions). The repository root is the installable Pi package; its manifest points at each extension entrypoint so the collection works with:
+Pi extensions live in [`pi-extensions`](pi-extensions). Each extension is an independent Pi package. From the repository root, install one by passing its directory to `pi install`:
 
 ```bash
-pi install git:github.com/Winds-AI/agent-tools
+pi install ./pi/pi-extensions/pi-browser-comment
 ```

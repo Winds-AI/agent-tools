@@ -9,10 +9,12 @@ Updates during streaming (on every output delta), not just after the turn comple
 Requires Node.js 22+.
 
 ```bash
-pi install git:github.com/Winds-AI/agent-tools
+git clone https://github.com/Winds-AI/agent-tools.git
+cd agent-tools
+pi install ./pi/pi-extensions/pi-tps-tracker
 ```
 
-To install only this extension from a local clone, use `pi install ./pi/pi-extensions/pi-tps-tracker` from the repository root. Restart Pi after installation.
+Restart Pi after installation.
 
 ## Display
 

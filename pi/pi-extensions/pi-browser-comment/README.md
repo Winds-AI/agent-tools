@@ -6,13 +6,7 @@ as centered markdown via the vendored `marked` library.
 
 ## Install
 
-Install the collection directly from GitHub:
-
-```bash
-pi install git:github.com/Winds-AI/agent-tools
-```
-
-To install only this extension from a local clone:
+Install this extension from a local clone:
 
 ```bash
 git clone https://github.com/Winds-AI/agent-tools.git

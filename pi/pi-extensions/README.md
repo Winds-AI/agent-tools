@@ -1,9 +1,9 @@
 # Pi extensions
 
-This directory contains the Pi extension packages included by the repository-level [`package.json`](../../package.json). Install the complete collection from GitHub with:
+Each directory here is an independent Pi extension package with its own `package.json` and `pi.extensions` manifest. Install one from a local checkout with:
 
 ```bash
-pi install git:github.com/Winds-AI/agent-tools
+pi install ./pi/pi-extensions/pi-browser-comment
 ```
 
-Each TypeScript extension also has its own `package.json` and can be installed from a local clone by passing its directory to `pi install`. `pi-model-providers` is an accompanying data directory, not an auto-loaded extension.
+`pi-model-providers` is an accompanying data directory, not an auto-loaded extension.

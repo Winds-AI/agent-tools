@@ -7,13 +7,7 @@ Adds two Exa-powered tools to Pi:
 
 ## Install
 
-Install the collection directly from GitHub (Pi installs the declared runtime dependency automatically):
-
-```bash
-pi install git:github.com/Winds-AI/agent-tools
-```
-
-For a local-only install, clone the repository, copy `.env.example` to `.env` in `pi/pi-extensions/pi-exa-web`, set `EXA_API_KEY`, and run `pi install ./pi/pi-extensions/pi-exa-web` from the repository root. A shell-provided `EXA_API_KEY` takes precedence over the package's `.env` file.
+Clone the repository, copy `.env.example` to `.env` in `pi/pi-extensions/pi-exa-web`, set `EXA_API_KEY`, and run `pi install ./pi/pi-extensions/pi-exa-web` from the repository root. Pi installs the declared `dotenv` runtime dependency automatically. A shell-provided `EXA_API_KEY` takes precedence over the package's `.env` file.
 
 Get an API key from <https://dashboard.exa.ai/api-keys>.
 
