@@ -23,7 +23,7 @@ For `pi-exa-web`, Pi installs its declared `dotenv` runtime dependency when inst
 | Exa Web | `pi/pi-extensions/pi-exa-web` |
 | Model Favorites | `pi/pi-extensions/pi-model-favorites` |
 | Pi Sticky | `pi/pi-extensions/pi-sticky` |
-| TPS Tracker | `pi/pi-extensions/pi-tps-tracker` |
+| Pi Speed | `pi/pi-extensions/pi-speed` |
 | User Message Navigation | `pi/pi-extensions/pi-user-message-navigation` |
 | Raw Probe | `pi/pi-extensions/raw-probe` |
 

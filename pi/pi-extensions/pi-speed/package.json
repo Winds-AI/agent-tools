@@ -1,13 +1,15 @@
 {
-  "name": "@winds-ai/pi-user-message-navigation",
-  "version": "0.3.0",
-  "description": "Navigate Pi's session tree through user messages with Cmd+Up and Cmd+Down",
+  "name": "@winds-ai/pi-speed",
+  "version": "0.2.0",
+  "description": "Rolling-window generation speed (tok/s) and persisted per-turn 'worked for' timer for Pi",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "pi-package",
     "pi-coding-agent",
-    "extension"
+    "extension",
+    "tokens",
+    "performance"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

@@ -1,19 +1,47 @@
 #!/usr/bin/env node
 
+// codex-eyes — image analysis for non-vision models/agents, using your
+// existing Codex login. One or more images in, Luna's text answer out.
+// Auth comes from ~/.codex/auth.json ($CODEX_HOME is honored).
+
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const TRANSCRIBE_URL = "https://chatgpt.com/backend-api/codex/responses";
+const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const MODEL = "gpt-5.6-luna";
 
-/** Resolve the Codex home dir like Codex itself does (find_codex_home). */
+const DEFAULT_PROMPT = "Describe what you see in this image.";
+
+const GLOBAL_SYSTEM_PROMPT =
+  "You are the eyes of a non-vision model or agent. " +
+  "Respect the requester's request exactly, and explain the image from its " +
+  "perspective — describe what it needs to understand and act on. " +
+  "Be concise and factual. If anything is unclear or in doubt, state that clearly.";
+
+const MIME_BY_EXTENSION = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+]);
+
+function usage() {
+  process.stderr.write(
+    `Usage: node codex-eyes.mjs <image...> ["prompt"]\n` +
+      `\n` +
+      `If two or more arguments are given, the last one is the prompt.\n`,
+  );
+}
+
+/** Resolve the Codex home dir like Codex itself does (CODEX_HOME, else ~/.codex). */
 function codexHome() {
   const env = process.env.CODEX_HOME;
   return env && env.trim() !== "" ? env : join(homedir(), ".codex");
 }
 
-/** Read auth from the local Codex login file. */
+/** Read the ChatGPT OAuth access token and account id from the Codex login file. */
 async function getAuth() {
   const authPath = join(codexHome(), "auth.json");
   let auth;
@@ -30,96 +58,130 @@ async function getAuth() {
   return { token, accountId };
 }
 
-/** Get the model response for the given images + prompt via the Codex Responses API. */
-async function askLuna(imagePaths, prompt) {
-  const { token, accountId } = await getAuth();
+/** Split argv into image paths and an optional trailing prompt. */
+function parseArgs(argv) {
+  const images = [];
+  let prompt;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      usage();
+      process.exit(0);
+    } else if (arg.startsWith("--")) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else {
+      images.push(arg);
+    }
+  }
+  if (images.length === 0) {
+    usage();
+    throw new Error("At least one image is required.");
+  }
+  // With 2+ positional args the last one is the prompt; otherwise the default.
+  if (images.length >= 2) prompt = images.pop();
+  return { images, prompt: prompt ?? DEFAULT_PROMPT };
+}
 
-  // Build content: prompt text first, then each image as base64 data URL.
+function mimeFor(imagePath) {
+  const dot = imagePath.lastIndexOf(".");
+  const ext = dot === -1 ? "" : imagePath.slice(dot).toLowerCase();
+  return MIME_BY_EXTENSION.get(ext) ?? "image/png";
+}
+
+/** Build the Luna request: user prompt + every image as a base64 data URL. */
+async function buildRequestBody(images, prompt) {
   const content = [{ type: "input_text", text: prompt }];
-  for (const imagePath of imagePaths) {
+  for (const imagePath of images) {
     const raw = await readFile(imagePath);
-    const mime = imagePath.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : imagePath.toLowerCase().endsWith(".webp")
-        ? "image/webp"
-        : "image/jpeg";
     content.push({
       type: "input_image",
-      image_url: `data:${mime};base64,${raw.toString("base64")}`,
+      image_url: `data:${mimeFor(imagePath)};base64,${raw.toString("base64")}`,
       detail: "auto",
     });
   }
+  const body = {
+    model: MODEL,
+    instructions: GLOBAL_SYSTEM_PROMPT,
+    input: [{ role: "user", content }],
+    reasoning: { effort: "none" },
+    store: false,
+    stream: true,
+    include: ["reasoning.encrypted_content"],
+  };
+  return JSON.stringify(body);
+}
 
-  const response = await fetch(TRANSCRIBE_URL, {
+/** Call Luna via the Codex Responses API (plain HTTP SSE transport). */
+async function askLuna(images, prompt) {
+  const { token, accountId } = await getAuth();
+  const body = await buildRequestBody(images, prompt);
+
+  const response = await fetch(RESPONSES_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       "ChatGPT-Account-Id": accountId,
-      originator: "Codex Desktop",
+      originator: "codex_cli_rs",
     },
-    body: JSON.stringify({
-      model: MODEL,
-      instructions:
-        "You are the eyes of a non-vision model or agent. " +
-        "Respect the requester's request exactly, and explain the image from its " +
-        "perspective — describe what it needs to understand and act on. " +
-        "Be concise and factual. If anything is unclear or in doubt, state that clearly.",
-      input: [{ role: "user", content }],
-      reasoning: { effort: "none" }, // no reasoning, standard mode
-      store: false,
-      stream: true,
-      include: ["reasoning.encrypted_content"],
-    }),
+    body,
+    signal: AbortSignal.timeout(5 * 60_000),
   });
 
-  if (!response.ok) {
-    const error = await response.text().catch(() => "Unknown error");
-    if (response.status === 401) throw new Error("Authentication failed. Run `codex login`.");
+  if (!response.ok || !response.body) {
+    const errorText = await response.text().catch(() => "");
+    if (response.status === 401) throw new Error("Authentication failed. Run `codex login` first.");
     if (response.status === 429) throw new Error("Rate limited. Try again in a moment.");
-    throw new Error(`API error (${response.status}): ${error}`);
+    throw new Error(`API error (${response.status}): ${errorText.slice(0, 500)}`);
   }
 
-  // Parse SSE stream, collect text deltas.
+  // Parse the SSE stream, collecting text deltas and surfacing failure events.
   let output = "";
-  const lines = (await response.text()).split("\n");
   let event = "";
-  for (const line of lines) {
-    if (line.startsWith("event: ")) {
-      event = line.slice(7);
-    } else if (line.startsWith("data: ") && event === "response.output_text.delta") {
-      try {
-        output += JSON.parse(line.slice(6)).delta ?? "";
-      } catch {}
-    } else if (
-      line.startsWith("data: ") &&
-      (event === "response.failed" || event === "response.incomplete")
-    ) {
-      try {
-        const err = JSON.parse(line.slice(6)).response?.error?.message;
-        if (err) throw new Error(err);
-      } catch {}
+  let failure = null;
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+      buffer = buffer.slice(newlineIndex + 1);
+
+      if (line.startsWith("event: ")) {
+        event = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        if (event === "response.output_text.delta") {
+          output += payload.delta ?? "";
+        } else if (event === "response.failed" || event === "response.incomplete") {
+          const message = payload.response?.error?.message ?? `Response ${event}`;
+          failure = message;
+        } else if (event === "error") {
+          failure = payload.message ?? "Stream error";
+        }
+      }
     }
   }
 
-  if (!output.trim()) throw new Error("Empty response from API.");
+  if (failure) throw new Error(failure);
   return output.trim();
 }
 
-const args = process.argv.slice(2);
-if (args.length === 0) {
-  process.stderr.write("Usage: node codex-eyes.mjs <image1> [image2 ...] [\"prompt\"]\n");
+main().catch((err) => {
+  process.stderr.write(`Error: ${err.message}\n`);
   process.exit(1);
+});
+
+async function main() {
+  const { images, prompt } = parseArgs(process.argv.slice(2));
+  const text = await askLuna(images, prompt);
+  if (!text) throw new Error("Empty response from API.");
+  process.stdout.write(text + "\n");
 }
-
-// If there are 2+ args, the last is the prompt; otherwise use the default.
-const hasPrompt = args.length >= 2;
-const imagePaths = hasPrompt ? args.slice(0, -1) : args;
-const prompt = hasPrompt ? args[args.length - 1] : "Describe what you see in this image.";
-
-askLuna(imagePaths, prompt)
-  .then((text) => process.stdout.write(text + "\n"))
-  .catch((err) => {
-    process.stderr.write(`Error: ${err.message}\n`);
-    process.exit(1);
-  });
