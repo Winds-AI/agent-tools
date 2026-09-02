@@ -111,7 +111,9 @@ async function buildRequestBody(images, prompt) {
   return JSON.stringify(body);
 }
 
-/** Call Luna via the Codex Responses API (plain HTTP SSE transport). */
+/** Call Luna via the Codex Responses API. Waits for the whole response, then
+ * returns Luna's complete text in one piece — nothing is streamed to the caller.
+ * (The endpoint requires stream:true on the wire; we just consume it silently.) */
 async function askLuna(images, prompt) {
   const { token, accountId } = await getAuth();
   const body = await buildRequestBody(images, prompt);
@@ -128,44 +130,35 @@ async function askLuna(images, prompt) {
     signal: AbortSignal.timeout(5 * 60_000),
   });
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     if (response.status === 401) throw new Error("Authentication failed. Run `codex login` first.");
     if (response.status === 429) throw new Error("Rate limited. Try again in a moment.");
     throw new Error(`API error (${response.status}): ${errorText.slice(0, 500)}`);
   }
 
-  // Parse the SSE stream, collecting text deltas and surfacing failure events.
+  // The endpoint always answers as an SSE stream; read it whole, then parse.
+  const raw = await response.text();
+
   let output = "";
   let event = "";
   let failure = null;
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  for await (const chunk of response.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let newlineIndex;
-    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
-      buffer = buffer.slice(newlineIndex + 1);
-
-      if (line.startsWith("event: ")) {
-        event = line.slice(7).trim();
-      } else if (line.startsWith("data: ")) {
-        let payload;
-        try {
-          payload = JSON.parse(line.slice(6));
-        } catch {
-          continue;
-        }
-        if (event === "response.output_text.delta") {
-          output += payload.delta ?? "";
-        } else if (event === "response.failed" || event === "response.incomplete") {
-          const message = payload.response?.error?.message ?? `Response ${event}`;
-          failure = message;
-        } else if (event === "error") {
-          failure = payload.message ?? "Stream error";
-        }
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event: ")) {
+      event = line.slice(7).trim();
+    } else if (line.startsWith("data: ")) {
+      let payload;
+      try {
+        payload = JSON.parse(line.slice(6));
+      } catch {
+        continue;
+      }
+      if (event === "response.output_text.delta") {
+        output += payload.delta ?? "";
+      } else if (event === "response.failed" || event === "response.incomplete") {
+        failure = payload.response?.error?.message ?? `Response ${event}`;
+      } else if (event === "error") {
+        failure = payload.message ?? "Stream error";
       }
     }
   }

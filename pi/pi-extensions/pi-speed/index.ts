@@ -8,11 +8,12 @@
  *   session grows.
  *
  * Job 2 — timer (persisted):
- *   Shows a live elapsed timer below the composer from the moment a prompt
- *   starts until the agent settles. When the run ends, appends a custom
- *   entry (`pi-speed:worked-for`) so a "worked for 4m 21s" line is rendered
- *   in the transcript — it survives /resume, /reload, and restarts. Only
- *   the final duration is persisted; the live ticking stays in memory.
+ *   Shows a live elapsed timer below the composer for each user message —
+ *   every prompt starts a fresh timer, and when that run settles the final
+ *   duration is appended as a custom entry (`pi-speed:worked-for`) so a
+ *   "worked for 4m 21s" line is rendered in the transcript after each turn.
+ *   It survives /resume, /reload, and restarts. Only the final duration is
+ *   persisted; the live ticking stays in memory.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -37,13 +38,13 @@ export default function (pi: ExtensionAPI) {
   // ---- rolling window (in-memory, per session) ----
   const window: { tokens: number; ms: number }[] = [];
 
-  // ---- per-run state ----
-  let runStart: number | null = null; // first prompt of the current run
+  // ---- per-turn state (one timer per user message) ----
+  let runStart: number | null = null; // this prompt's start time
   let msgStart: number | null = null; // current assistant message start
   let streamStart: number | null = null; // first delta of the current message
   let msgTokens = 0; // estimated tokens of the current message
   let lastSpeed: number | null = null; // most recent window average (tok/s)
-  let lastWorkedFor: number | null = null; // duration of the most recent run
+  let lastWorkedFor: number | null = null; // duration of the most recent turn
   let ticker: ReturnType<typeof setInterval> | null = null;
 
   function windowSpeed(): number | null {
@@ -121,14 +122,12 @@ export default function (pi: ExtensionAPI) {
     stopTicker();
   });
 
-  // A run begins with the first prompt after an idle period.
+  // Every user message starts a fresh timer.
   pi.on("before_agent_start", async (_event, ctx) => {
-    if (runStart === null) {
-      runStart = Date.now();
-      if (ctx.hasUI) {
-        renderTimerWidget(ctx);
-        startTicker(ctx);
-      }
+    runStart = Date.now();
+    if (ctx.hasUI) {
+      renderTimerWidget(ctx);
+      startTicker(ctx);
     }
   });
 

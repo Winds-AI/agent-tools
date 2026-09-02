@@ -16,9 +16,26 @@ Requires Node.js 22+, `curl`, and an authenticated Codex CLI (`codex login`).
 ```bash
 node codex-ears.mjs /path/to/voice-note.wav
 node codex-ears.mjs /path/to/voice-note.wav --lang en-US
+node codex-ears.mjs --lang hi /path/to/voice-note.wav     # flag position is free
+node codex-ears.mjs /path/to/voice-note.wav --lang=en-GB  # = form also accepted
 ```
 
-The script writes the transcript to a temp text file and prints the file path.
+That is the entire surface. Exactly one positional argument (the audio file)
+and at most one option:
+
+| Argument | Meaning |
+|---|---|
+| `<audio-file>` (positional, required, exactly one) | Audio file path. Any format the ChatGPT transcribe API supports (WAV, MP3, M4A, WebM/Opus, …) |
+| `--lang <bcp-47>` (optional, at most once) | Ask the API to re-transcribe the audio in the given language (e.g. `en-US`, `hi`, `de`) |
+| `-h`, `--help` | Print usage and exit |
+
+Anything else is rejected with an error: a second positional argument,
+unknown flags, `--lang` without a value. `CODEX_HOME` is honored for the auth
+file location.
+
+Output: the transcript is written to a temp text file and its path is printed
+to stdout — e.g. `/tmp/codex-transcript-<uuid>.txt`. Nothing else is printed
+on success; errors go to stderr with exit code 1.
 
 ## How it works
 
