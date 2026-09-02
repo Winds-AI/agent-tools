@@ -47,15 +47,24 @@ Transcript line, persisted and re-rendered on every session load:
 - The persisted entry uses pi's `custom` entry type (`customType: "pi-speed:worked-for"`), so it is excluded from model context and costs nothing token-wise. Shape:
 
 ```json
-{ "seconds": 6, "outputTokens": 20, "model": "crofai/glm-5.3-flash" }
+{
+  "seconds": 6,
+  "outputTokens": 20,
+  "streamMs": 4200,
+  "model": "crofai/glm-5.3-flash"
+}
 ```
 
-`seconds` is the turn duration (prompt → settled), `outputTokens` the total
-provider-reported output tokens of the turn, `model` the provider/model that
-served it. Because pi does not persist streaming durations anywhere, these
-entries are what make historical per-model tok/s computable after the fact:
-`outputTokens / seconds` gives a lower-bound estimate (it includes
-tool-execution time inside the turn).
+| Field | Meaning |
+|---|---|
+| `seconds` | Total wall-clock duration of the turn (prompt → settled), including tool execution |
+| `outputTokens` | Provider-reported output tokens of the turn (all assistant responses summed) |
+| `streamMs` | Pure generation time: first token → end for every assistant response in the turn, summed. Excludes tool execution and between-turn latency |
+| `model` | `provider/model-id` that served the turn |
+
+For a near-accurate generation speed, compute `outputTokens / (streamMs / 1000)` —
+this is the same measure pi's live `tok/s` footer shows. pi itself persists
+neither duration; without these entries the data is lost after the session.
 
 ## License
 

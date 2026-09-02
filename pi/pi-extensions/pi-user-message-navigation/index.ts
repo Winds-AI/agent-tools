@@ -14,8 +14,10 @@
  * timestamps are enough.
  *
  * Keys use pi's `registerShortcut` (editor-independent): `super+up` /
- * `super+down` (Cmd on macOS). Ctrl+Up/Down is deliberately NOT bound —
- * pi's fullscreen mode uses those keys for transcript message navigation.
+ * `super+down` (Cmd on macOS) and `ctrl+up` / `ctrl+down`. Both pairs move
+ * along the session tree; transcript scrolling is done with the mouse.
+ * Note ctrl+up/down overrides pi's fullscreen "jump between marked
+ * messages" transcript keys — intentional, per this extension's purpose.
  *
  * Mechanics: pi's shortcut handlers receive a context without tree-control
  * methods, so shortcuts bridge to the `/user-message-nav` command (commands
@@ -148,6 +150,14 @@ export default function (pi: ExtensionAPI) {
 		handler: (ctx) => viaCommand("older", ctx),
 	});
 	pi.registerShortcut("super+down", {
+		description: "Go to the next user message",
+		handler: (ctx) => viaCommand("newer", ctx),
+	});
+	pi.registerShortcut("ctrl+up", {
+		description: "Go to the previous user message",
+		handler: (ctx) => viaCommand("older", ctx),
+	});
+	pi.registerShortcut("ctrl+down", {
 		description: "Go to the next user message",
 		handler: (ctx) => viaCommand("newer", ctx),
 	});
