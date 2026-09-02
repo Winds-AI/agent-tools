@@ -1,6 +1,6 @@
 {
   "name": "@winds-ai/pi-user-message-navigation",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Navigate Pi's session tree through user messages with Cmd+Up and Cmd+Down",
   "type": "module",
   "license": "MIT",

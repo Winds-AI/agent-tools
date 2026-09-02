@@ -1,14 +1,18 @@
-# Pi Sticky (keyboard-free fork)
+# Pi Sticky (keyboard-free fork) — ARCHIVED
+
+> **Archived:** Pi 0.84.0+ ships a native fullscreen TUI mode that does this
+> without an extension — run `pi --tui-mode fullscreen` or set
+> `tuiMode: "fullscreen"` in `/settings`. This extension is kept for
+> reference only; it is not maintained.
 
 Keeps Pi's chat input and footer pinned to the bottom while chat history
 scrolls, so you can keep typing while reading back through the transcript.
 
-## Prefer the built-in fullscreen mode first
+## The built-in alternative
 
-Recent Pi versions ship a native **fullscreen TUI mode** that solves the same
-problem without an extension: the transcript scrolls inside the terminal
-viewport while the editor, widgets, and footer stay fixed at the bottom. Try
-it before installing this extension:
+Pi's native **fullscreen TUI mode** solves the same problem without an
+extension: the transcript scrolls inside the terminal viewport while the
+editor, widgets, and footer stay fixed at the bottom.
 
 - Run `pi --tui-mode fullscreen`, or
 - Set it as the default in `/settings` → `tuiMode` → `fullscreen`

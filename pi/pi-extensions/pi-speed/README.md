@@ -44,7 +44,18 @@ Transcript line, persisted and re-rendered on every session load:
 ## Notes
 
 - Renamed from `pi-tps-tracker`: it no longer tracks only TPS, and it dropped the TTFD readout in favor of the elapsed timer.
-- The persisted entry uses pi's `custom` entry type (`customType: "pi-speed:worked-for"`), so it is excluded from model context and costs nothing token-wise.
+- The persisted entry uses pi's `custom` entry type (`customType: "pi-speed:worked-for"`), so it is excluded from model context and costs nothing token-wise. Shape:
+
+```json
+{ "seconds": 6, "outputTokens": 20, "model": "crofai/glm-5.3-flash" }
+```
+
+`seconds` is the turn duration (prompt → settled), `outputTokens` the total
+provider-reported output tokens of the turn, `model` the provider/model that
+served it. Because pi does not persist streaming durations anywhere, these
+entries are what make historical per-model tok/s computable after the fact:
+`outputTokens / seconds` gives a lower-bound estimate (it includes
+tool-execution time inside the turn).
 
 ## License
 

@@ -3,8 +3,8 @@
 Navigate Pi's session tree through user messages — no `/tree`, no arrow-key
 walking through tool-call events, no branch summaries.
 
-- **Cmd+Up** (or **Ctrl+Up**): go to the previous user message
-- **Cmd+Down** (or **Ctrl+Down**: go to the next user message
+- **Cmd+Up**: go to the previous user message
+- **Cmd+Down**: go to the next user message
 - No branch summary is generated
 - No model turn is triggered
 - The target user message is restored into the editor (native `/tree`
@@ -17,11 +17,12 @@ built-in entry timestamps are used; nothing extra is persisted.
 
 ## Keys
 
-`super+up` / `super+down` are the primary bindings (Cmd on macOS). Terminals
-that don't report the Super modifier typically alias Cmd to Ctrl (Windows and
-WSL terminals do), which the `ctrl+up` / `ctrl+down` fallback covers. Both
-pairs are registered through `pi.registerShortcut`, so they work with the
-default editor and with editor extensions.
+`super+up` / `super+down` (Cmd on macOS), registered through
+`pi.registerShortcut`, so they work in regular and fullscreen TUI modes and
+with editor extensions. Ctrl+Up/Down is deliberately not bound: pi's
+fullscreen mode uses those keys to jump between messages in the transcript.
+If your terminal does not report the Super modifier, remap the binding in
+`~/.pi/agent/keybindings.json` to keys it can send.
 
 ## Install
 

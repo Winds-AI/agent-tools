@@ -40,6 +40,8 @@ export default function (pi: ExtensionAPI) {
 
   // ---- per-turn state (one timer per user message) ----
   let runStart: number | null = null; // this prompt's start time
+  let runOutputTokens = 0; // output tokens of this run (from provider usage)
+  let lastOutputTokens = 0; // output tokens of the most recent completed run
   let msgStart: number | null = null; // current assistant message start
   let streamStart: number | null = null; // first delta of the current message
   let msgTokens = 0; // estimated tokens of the current message
@@ -109,6 +111,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     window.length = 0;
     runStart = null;
+    runOutputTokens = 0;
+    lastOutputTokens = 0;
     msgStart = null;
     streamStart = null;
     msgTokens = 0;
@@ -157,6 +161,7 @@ export default function (pi: ExtensionAPI) {
 
     const official = event.message.usage?.output ?? 0;
     const tokens = official > 0 ? official : Math.round(msgTokens);
+    if (tokens > 0) runOutputTokens += tokens;
     const timingStart = streamStart ?? msgStart;
     if (timingStart && tokens > 0) {
       window.push({ tokens, ms: Math.max(0, Date.now() - timingStart) });
@@ -177,11 +182,20 @@ export default function (pi: ExtensionAPI) {
 
     const seconds = (Date.now() - runStart) / 1000;
     lastWorkedFor = seconds;
+    lastOutputTokens = runOutputTokens;
     runStart = null;
+    runOutputTokens = 0;
     stopTicker();
 
     if (seconds >= MIN_PERSIST_SECONDS) {
-      pi.appendEntry(ENTRY_TYPE, { seconds: Math.round(seconds) });
+      // outputTokens lets a script compute tok/s per model after the fact
+      // (pi does not persist streaming durations, so we record them here).
+      const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+      pi.appendEntry(ENTRY_TYPE, {
+        seconds: Math.round(seconds),
+        outputTokens: lastOutputTokens,
+        model,
+      });
     }
 
     if (ctx.hasUI) {

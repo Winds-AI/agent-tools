@@ -22,7 +22,6 @@ For `pi-exa-web`, Pi installs its declared `dotenv` runtime dependency when inst
 | Codex Web Search | `pi/pi-extensions/pi-codex-web-search` |
 | Exa Web | `pi/pi-extensions/pi-exa-web` |
 | Model Favorites | `pi/pi-extensions/pi-model-favorites` |
-| Pi Sticky | `pi/pi-extensions/pi-sticky` |
 | Pi Speed | `pi/pi-extensions/pi-speed` |
 | User Message Navigation | `pi/pi-extensions/pi-user-message-navigation` |
 | Raw Probe | `pi/pi-extensions/raw-probe` |

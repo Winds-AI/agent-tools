@@ -1,6 +1,6 @@
 {
   "name": "@winds-ai/pi-speed",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Rolling-window generation speed (tok/s) and persisted per-turn 'worked for' timer for Pi",
   "type": "module",
   "license": "MIT",

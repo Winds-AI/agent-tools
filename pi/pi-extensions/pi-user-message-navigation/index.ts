@@ -1,10 +1,10 @@
 /**
  * pi-user-message-navigation — jump between user messages in the session tree.
  *
- * Cmd/Ctrl+Up   — move to the previous user message, without a branch summary
- *                 or a model turn. The message is restored into the editor
- *                 (pi's native /tree semantics); submitting it starts a branch.
- * Cmd/Ctrl+Down — move forward again to the next user message.
+ * Cmd+Up   — move to the previous user message, without a branch summary
+ *            or a model turn. The message is restored into the editor
+ *            (pi's native /tree semantics); submitting it starts a branch.
+ * Cmd+Down — move forward again to the next user message.
  *
  * "Latest branch": the session tree keeps every entry's parent, and entries
  * carry timestamps. The anchor list is built by walking the tree from the
@@ -12,6 +12,10 @@
  * so navigation always comes back down the most recent line of work, even in
  * heavily branched sessions. No new time tracking is added; pi's entry
  * timestamps are enough.
+ *
+ * Keys use pi's `registerShortcut` (editor-independent): `super+up` /
+ * `super+down` (Cmd on macOS). Ctrl+Up/Down is deliberately NOT bound —
+ * pi's fullscreen mode uses those keys for transcript message navigation.
  *
  * Mechanics: pi's shortcut handlers receive a context without tree-control
  * methods, so shortcuts bridge to the `/user-message-nav` command (commands
@@ -60,7 +64,7 @@ function latestUserMessages(entries: SessionEntry[]): SessionEntry[] {
 	}
 
 	const newest = (list: SessionEntry[]): SessionEntry | undefined =>
-		list.reduce((a, b) => (a.timestamp >= b.timestamp ? a : b));
+		list.length > 0 ? list.reduce((a, b) => (a.timestamp >= b.timestamp ? a : b)) : undefined;
 
 	const path: SessionEntry[] = [];
 	const seen = new Set<string>();
@@ -145,14 +149,6 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.registerShortcut("super+down", {
 		description: "Go to the next user message",
-		handler: (ctx) => viaCommand("newer", ctx),
-	});
-	pi.registerShortcut("ctrl+up", {
-		description: "Go to the previous user message (Ctrl fallback)",
-		handler: (ctx) => viaCommand("older", ctx),
-	});
-	pi.registerShortcut("ctrl+down", {
-		description: "Go to the next user message (Ctrl fallback)",
 		handler: (ctx) => viaCommand("newer", ctx),
 	});
 

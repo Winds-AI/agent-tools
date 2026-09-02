@@ -13,7 +13,6 @@ pi install ./pi/pi-extensions/pi-browser-comment
 | Exa Web | `pi/pi-extensions/pi-exa-web` |
 | Model Favorites | `pi/pi-extensions/pi-model-favorites` |
 | Pi Speed (formerly TPS Tracker) | `pi/pi-extensions/pi-speed` |
-| Pi Sticky | `pi/pi-extensions/pi-sticky` |
 | User Message Navigation | `pi/pi-extensions/pi-user-message-navigation` |
 | Raw Probe | `pi/pi-extensions/raw-probe` |
 
