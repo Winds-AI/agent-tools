@@ -40,10 +40,6 @@ export default function (pi: ExtensionAPI) {
 
   // ---- per-turn state (one timer per user message) ----
   let runStart: number | null = null; // this prompt's start time
-  let runOutputTokens = 0; // output tokens of this run (from provider usage)
-  let runStreamMs = 0; // pure streaming time of this run (excludes tool execution)
-  let lastOutputTokens = 0; // output tokens of the most recent completed run
-  let lastStreamMs = 0; // pure streaming time of the most recent completed run
   let msgStart: number | null = null; // current assistant message start
   let streamStart: number | null = null; // first delta of the current message
   let msgTokens = 0; // estimated tokens of the current message
@@ -113,10 +109,6 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     window.length = 0;
     runStart = null;
-    runOutputTokens = 0;
-    runStreamMs = 0;
-    lastOutputTokens = 0;
-    lastStreamMs = 0;
     msgStart = null;
     streamStart = null;
     msgTokens = 0;
@@ -165,12 +157,9 @@ export default function (pi: ExtensionAPI) {
 
     const official = event.message.usage?.output ?? 0;
     const tokens = official > 0 ? official : Math.round(msgTokens);
-    if (tokens > 0) runOutputTokens += tokens;
     const timingStart = streamStart ?? msgStart;
     if (timingStart && tokens > 0) {
-      const streamMs = Math.max(0, Date.now() - timingStart);
-      runStreamMs += streamMs;
-      window.push({ tokens, ms: streamMs });
+      window.push({ tokens, ms: Math.max(0, Date.now() - timingStart) });
       if (window.length > WINDOW_SIZE) window.shift();
       lastSpeed = windowSpeed();
     }
@@ -188,26 +177,13 @@ export default function (pi: ExtensionAPI) {
 
     const seconds = (Date.now() - runStart) / 1000;
     lastWorkedFor = seconds;
-    lastOutputTokens = runOutputTokens;
-    lastStreamMs = runStreamMs;
     runStart = null;
-    runOutputTokens = 0;
-    runStreamMs = 0;
     stopTicker();
 
     if (seconds >= MIN_PERSIST_SECONDS) {
-      // `streamMs` is pure generation time (first delta → end of each
-      // assistant response), excluding tool execution and provider latency
-      // between turns — so streamTokensPerSecond is a near-accurate
-      // generation speed. `seconds` remains the total wall-clock duration.
-      // pi persists neither of these; without this entry they are lost.
-      const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-      pi.appendEntry(ENTRY_TYPE, {
-        seconds: Math.round(seconds),
-        outputTokens: lastOutputTokens,
-        streamMs: Math.round(lastStreamMs),
-        model,
-      });
+      // Persist only the timer. Speed is deliberately not persisted: the
+      // rolling average lives in memory for the current session only.
+      pi.appendEntry(ENTRY_TYPE, { seconds: Math.round(seconds) });
     }
 
     if (ctx.hasUI) {

@@ -44,27 +44,16 @@ Transcript line, persisted and re-rendered on every session load:
 ## Notes
 
 - Renamed from `pi-tps-tracker`: it no longer tracks only TPS, and it dropped the TTFD readout in favor of the elapsed timer.
-- The persisted entry uses pi's `custom` entry type (`customType: "pi-speed:worked-for"`), so it is excluded from model context and costs nothing token-wise. Shape:
+- Speed (`tok/s`) is **in-memory only** — the rolling window lives for the current session and is not persisted anywhere.
+- The timer persists one `custom` entry per turn (`customType: "pi-speed:worked-for"`), excluded from model context and costing nothing token-wise:
 
 ```json
-{
-  "seconds": 6,
-  "outputTokens": 20,
-  "streamMs": 4200,
-  "model": "crofai/glm-5.3-flash"
-}
+{ "seconds": 6 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `seconds` | Total wall-clock duration of the turn (prompt → settled), including tool execution |
-| `outputTokens` | Provider-reported output tokens of the turn (all assistant responses summed) |
-| `streamMs` | Pure generation time: first token → end for every assistant response in the turn, summed. Excludes tool execution and between-turn latency |
-| `model` | `provider/model-id` that served the turn |
-
-For a near-accurate generation speed, compute `outputTokens / (streamMs / 1000)` —
-this is the same measure pi's live `tok/s` footer shows. pi itself persists
-neither duration; without these entries the data is lost after the session.
+`seconds` is the total wall-clock duration of the turn (prompt → settled),
+including tool execution. It is what the `⏱ worked for 6s` transcript line
+renders on reload, `/resume`, and restart.
 
 ## License
 
