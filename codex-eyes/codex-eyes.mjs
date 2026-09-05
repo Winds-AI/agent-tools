@@ -11,13 +11,12 @@ import { join } from "node:path";
 const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const MODEL = "gpt-5.6-luna";
 
-const DEFAULT_PROMPT = "Describe what you see in this image.";
-
 const GLOBAL_SYSTEM_PROMPT =
   "You are the eyes of a non-vision model or agent. " +
-  "Respect the requester's request exactly, and explain the image from its " +
-  "perspective — describe what it needs to understand and act on. " +
-  "Be concise and factual. If anything is unclear or in doubt, state that clearly.";
+  "The user message is the requester's specific request — answer it directly " +
+  "and exactly, from their perspective, with only what they need to understand " +
+  "and act on. Be concise and factual. If anything is unclear or in doubt, " +
+  "state that clearly.";
 
 const MIME_BY_EXTENSION = new Map([
   [".png", "image/png"],
@@ -29,9 +28,9 @@ const MIME_BY_EXTENSION = new Map([
 
 function usage() {
   process.stderr.write(
-    `Usage: node codex-eyes.mjs <image...> ["prompt"]\n` +
+    `Usage: node codex-eyes.mjs <image...> <prompt>\n` +
       `\n` +
-      `If two or more arguments are given, the last one is the prompt.\n`,
+      `Images first; the prompt is last and required.\n`,
   );
 }
 
@@ -58,10 +57,9 @@ async function getAuth() {
   return { token, accountId };
 }
 
-/** Split argv into image paths and an optional trailing prompt. */
+/** Split argv into image paths and the trailing prompt. */
 function parseArgs(argv) {
-  const images = [];
-  let prompt;
+  const args = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -70,16 +68,16 @@ function parseArgs(argv) {
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     } else {
-      images.push(arg);
+      args.push(arg);
     }
   }
-  if (images.length === 0) {
+  if (args.length < 2) {
     usage();
-    throw new Error("At least one image is required.");
+    throw new Error("At least one image and a prompt are required.");
   }
-  // With 2+ positional args the last one is the prompt; otherwise the default.
-  if (images.length >= 2) prompt = images.pop();
-  return { images, prompt: prompt ?? DEFAULT_PROMPT };
+  // The last positional arg is the prompt; everything before it is images.
+  const prompt = args.pop();
+  return { images: args, prompt };
 }
 
 function mimeFor(imagePath) {

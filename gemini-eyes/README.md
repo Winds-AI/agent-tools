@@ -17,22 +17,19 @@ Requires Node.js 22+ and an authenticated Antigravity CLI (run `agy` once and
 log in).
 
 ```bash
-node gemini-eyes.mjs /path/to/image.png
 node gemini-eyes.mjs /path/to/image.png "What does this show?"
 node gemini-eyes.mjs a.png b.png c.png "Compare these screenshots"
-node gemini-eyes.mjs a.png b.png                       # default prompt, 2 images
+node gemini-eyes.mjs a.png b.png "Are these the same dialog?"
 node gemini-eyes.mjs -h                                # usage
 ```
 
-That is the entire surface. Positional arguments only:
+That is the entire surface. Positional arguments only: all arguments except
+the last are image paths; the last one is the prompt. The prompt is required
+— there is no default. There are no other flags or options. `AGY_HOME` is
+honored for the auth file location (default `~/.gemini/antigravity-cli`).
 
-- **One argument**: a single image, default prompt.
-- **Two or more arguments**: all but the last are image paths, the last one
-  is the prompt.
-
-The prompt is optional and defaults to `Describe what you see in this image.`
-There are no other flags or options. `AGY_HOME` is honored for the auth file
-location (default `~/.gemini/antigravity-cli`).
+Calling agents: pass your actual question as the last argument — a specific
+question gets a short, targeted answer.
 
 Output: Flash's complete answer is printed to stdout as a single block —
 nothing is streamed or printed until the response is fully received. Errors
@@ -59,9 +56,10 @@ a base64 `inlineData` part make up the user turn.
 Two prompt layers shape the answer:
 
 - A global system prompt tells Flash it is the eyes of a non-vision agent
-  and to explain the images from the requester's perspective.
-- The per-call prompt is whatever the calling agent wants to know about these
-  specific images.
+  and to answer the caller's request directly and concisely, from the
+  requester's perspective.
+- The per-call prompt (required) is whatever the calling agent wants to know
+  about these specific images.
 
 The endpoint answers as an SSE stream of `data:` events; the script waits for
 the whole response, concatenates the text parts, and returns them in one

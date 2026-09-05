@@ -14,22 +14,19 @@ non-vision model can call this tool to understand images.
 Requires Node.js 22+ and an authenticated Codex CLI (`codex login`).
 
 ```bash
-node codex-eyes.mjs /path/to/image.png
 node codex-eyes.mjs /path/to/image.png "What does this show?"
 node codex-eyes.mjs a.png b.png c.png "Compare these screenshots"
-node codex-eyes.mjs a.png b.png                       # default prompt, 2 images
+node codex-eyes.mjs a.png b.png "Are these the same dialog?"
 node codex-eyes.mjs -h                                # usage
 ```
 
-That is the entire surface. Positional arguments only:
+That is the entire surface. Positional arguments only: all arguments except
+the last are image paths; the last one is the prompt. The prompt is required
+— there is no default. There are no other flags or options. `CODEX_HOME` is
+honored for the auth file location.
 
-- **One argument**: a single image, default prompt.
-- **Two or more arguments**: all but the last are image paths, the last one
-  is the prompt.
-
-The prompt is optional and defaults to `Describe what you see in this image.`
-There are no other flags or options. `CODEX_HOME` is honored for the auth
-file location.
+Calling agents: pass your actual question as the last argument — a specific
+question gets a short, targeted answer.
 
 Output: Luna's complete answer is printed to stdout as a single block —
 nothing is streamed or printed until the response is fully received. Errors
@@ -48,9 +45,10 @@ plus each image as a base64 data URL in the request, with
 Two prompt layers shape the answer:
 
 - A global system prompt tells Luna it is the eyes of a non-vision agent and
-  to explain the images from the requester's perspective.
-- The per-call prompt is whatever the calling agent wants to know about these
-  specific images.
+  to answer the caller's request directly and concisely, from the requester's
+  perspective.
+- The per-call prompt (required) is whatever the calling agent wants to know
+  about these specific images.
 
 We use plain HTTP (SSE), not the WebSocket transport Codex prefers for Luna.
 Fast/priority mode is not reliably honored over this HTTP path — the backend
