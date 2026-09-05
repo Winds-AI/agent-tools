@@ -29,3 +29,11 @@ For `pi-exa-web`, Pi installs its declared `dotenv` runtime dependency when inst
 [`pi/pi-extensions/pi-model-providers`](pi/pi-extensions/pi-model-providers) contains provider/model data for copying into Pi's `models.json`; it is intentionally data-only because Pi packages do not auto-load custom model catalogs.
 
 The other top-level directories contain standalone agent utilities and are not Pi extensions.
+
+| Tool | Path | Purpose |
+| --- | --- | --- |
+| Codex Ears | `codex-ears` | Audio transcription via the ChatGPT transcribe endpoint |
+| Codex Eyes | `codex-eyes` | Image analysis via Codex (GPT-5.6 Luna) |
+| Gemini Eyes | `gemini-eyes` | Image analysis via Antigravity (Gemini 3.8 Flash) |
+| Pi Session MD | `pi-session-md` | Convert pi session JSONL files to markdown |
+| VN | `vn` | Live voice session tool with local transcription |
