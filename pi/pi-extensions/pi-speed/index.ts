@@ -3,14 +3,13 @@
  *
  * Job 1 — speed (in-memory, live):
  *   Rolling-window tokens/sec across the last WINDOW_SIZE assistant
- *   responses, shown in the footer status while streaming and after each
- *   response. The window keeps computation O(1) no matter how long the
- *   session grows.
+ *   responses, shown in the footer. The window keeps computation O(1) no
+ *   matter how long the session grows.
  *
- * Job 2 — timer (persisted):
- *   Shows a live elapsed timer below the composer for each user message —
- *   every prompt starts a fresh timer, and when that run settles the final
- *   duration is appended as a custom entry (`pi-speed:worked-for`) so a
+ * Job 2 — timer (live beside the working indicator, final value persisted):
+ *   Every user message starts a fresh timer that ticks inside the working
+ *   row: `⠇ Working · ⏱ 36s`. When the run settles, the final duration is
+ *   appended as a custom entry (`pi-speed:worked-for`) so a
  *   "worked for 4m 21s" line is rendered in the transcript after each turn.
  *   It survives /resume, /reload, and restarts. Only the final duration is
  *   persisted; the live ticking stays in memory.
@@ -44,7 +43,6 @@ export default function (pi: ExtensionAPI) {
   let streamStart: number | null = null; // first delta of the current message
   let msgTokens = 0; // estimated tokens of the current message
   let lastSpeed: number | null = null; // most recent window average (tok/s)
-  let lastWorkedFor: number | null = null; // duration of the most recent turn
   let ticker: ReturnType<typeof setInterval> | null = null;
 
   function windowSpeed(): number | null {
@@ -58,48 +56,34 @@ export default function (pi: ExtensionAPI) {
     return runStart === null ? 0 : (Date.now() - runStart) / 1000;
   }
 
-  function renderStatus(ctx: any, live: boolean) {
-    const theme = ctx.ui.theme;
+  function renderStatus(ctx: any) {
     const speed = lastSpeed !== null ? `${Math.round(lastSpeed)} tok/s` : "-- tok/s";
-    const windowInfo = theme.fg("dim", `(last ${window.length})`);
-    let timer: string;
-    if (runStart !== null) {
-      timer = theme.fg("accent", `⏱ ${formatDuration(elapsed())}${live ? "…" : ""}`);
-    } else if (lastWorkedFor !== null) {
-      timer = theme.fg("dim", `worked for ${formatDuration(lastWorkedFor)}`);
-    } else {
-      timer = "";
-    }
-    ctx.ui.setStatus("pi-speed", `${speed} ${windowInfo}${timer ? "  " + timer : ""}`);
+    ctx.ui.setStatus("pi-speed", speed);
   }
 
-  function renderTimerWidget(ctx: any) {
-    if (runStart === null) {
-      ctx.ui.setWidget("pi-speed", undefined);
-      return;
+  function renderWorkingTimer(ctx: any) {
+    if (runStart !== null) {
+      ctx.ui.setWorkingMessage(`Working · ⏱ ${formatDuration(elapsed())}`);
     }
-    const text = `⏱ ${formatDuration(elapsed())}`;
-    ctx.ui.setWidget("pi-speed", (tui: any, theme: any) => new Text(theme.fg("accent", text), 1, 0), {
-      placement: "belowEditor",
-    });
   }
 
   function startTicker(ctx: any) {
     stopTicker();
-    ticker = setInterval(() => {
-      renderTimerWidget(ctx);
-      renderStatus(ctx, true);
-    }, 1000);
+    renderWorkingTimer(ctx);
+    ticker = setInterval(() => renderWorkingTimer(ctx), 1000);
   }
 
-  function stopTicker() {
+  function stopTicker(ctx?: any) {
     if (ticker !== null) {
       clearInterval(ticker);
       ticker = null;
     }
+    if (ctx !== undefined) {
+      ctx.ui.setWorkingMessage(); // restore pi's default working message
+    }
   }
 
-  // Transcript line for persisted run durations (survives resume/reload).
+  // Transcript line for persisted turn durations (survives resume/reload).
   pi.registerEntryRenderer(ENTRY_TYPE, (entry, _options, theme) => {
     const data = entry.data as { seconds?: number } | undefined;
     if (!data || typeof data.seconds !== "number") return undefined;
@@ -113,20 +97,18 @@ export default function (pi: ExtensionAPI) {
     streamStart = null;
     msgTokens = 0;
     lastSpeed = null;
-    lastWorkedFor = null;
-    stopTicker();
-    if (ctx.hasUI) renderStatus(ctx, false);
+    stopTicker(undefined);
+    if (ctx.hasUI) renderStatus(ctx);
   });
 
   pi.on("session_shutdown", async () => {
-    stopTicker();
+    stopTicker(undefined);
   });
 
   // Every user message starts a fresh timer.
   pi.on("before_agent_start", async (_event, ctx) => {
     runStart = Date.now();
     if (ctx.hasUI) {
-      renderTimerWidget(ctx);
       startTicker(ctx);
     }
   });
@@ -138,18 +120,13 @@ export default function (pi: ExtensionAPI) {
     msgTokens = 0;
   });
 
-  pi.on("message_update", async (event, ctx) => {
+  pi.on("message_update", async (event) => {
     if (event.message.role !== "assistant") return;
     const e = event.assistantMessageEvent;
     if (e.type !== "text_delta" && e.type !== "thinking_delta" && e.type !== "toolcall_delta") return;
 
     streamStart ??= Date.now();
     msgTokens += Math.max(0, e.delta.length / 4);
-
-    if (ctx.hasUI) {
-      renderTimerWidget(ctx);
-      renderStatus(ctx, true);
-    }
   });
 
   pi.on("message_end", async (event, ctx) => {
@@ -168,7 +145,7 @@ export default function (pi: ExtensionAPI) {
     streamStart = null;
     msgTokens = 0;
 
-    if (ctx.hasUI) renderStatus(ctx, true);
+    if (ctx.hasUI) renderStatus(ctx);
   });
 
   // The run is truly over: no retries, no compaction, no queued follow-ups.
@@ -176,9 +153,8 @@ export default function (pi: ExtensionAPI) {
     if (runStart === null) return;
 
     const seconds = (Date.now() - runStart) / 1000;
-    lastWorkedFor = seconds;
     runStart = null;
-    stopTicker();
+    stopTicker(ctx.hasUI ? ctx : undefined);
 
     if (seconds >= MIN_PERSIST_SECONDS) {
       // Persist only the timer. Speed is deliberately not persisted: the
@@ -186,9 +162,6 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry(ENTRY_TYPE, { seconds: Math.round(seconds) });
     }
 
-    if (ctx.hasUI) {
-      ctx.ui.setWidget("pi-speed", undefined);
-      renderStatus(ctx, false);
-    }
+    if (ctx.hasUI) renderStatus(ctx);
   });
 }

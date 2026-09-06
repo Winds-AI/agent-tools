@@ -19,27 +19,34 @@ Restart Pi after installation.
 
 ## Display
 
-Footer while streaming (live):
+While the agent works, the timer ticks inside the working row, beside the
+spinner:
 
 ```
-87 tok/s (last 15)  ⏱ 1m 03s…
+── ⠇ Working · ⏱ 36s ──────────────────────────────────────────
 ```
 
-Footer after the run settles:
+The footer carries only the speed — live while streaming, after every
+response:
 
 ```
-74 tok/s (last 15)  worked for 4m 21s
+145 tok/s
 ```
 
-Transcript line, persisted and re-rendered on every session load:
+When the turn settles, the working row returns to pi's default and a
+transcript line is appended (persisted, re-rendered on every session load):
 
 ```
-⏱ worked for 4m 21s
+⏱ worked for 41s
 ```
 
-- `tok/s` is the rolling average over the last 15 responses: total output tokens ÷ total streaming milliseconds.
-- The live ticker ticks once per second and disappears when the run ends; the final number takes its place.
-- Runs shorter than 1 second (instant answers, immediate failures) are not persisted.
+- `tok/s` is the rolling average over the last 15 responses: total output
+  tokens ÷ total streaming milliseconds. In-memory only — not persisted.
+- The timer starts fresh with every user message and covers the whole turn
+  (tool calls included). It lives beside the working indicator while the
+  agent works, then only the transcript line remains.
+- Runs shorter than 1 second (instant answers, immediate failures) are not
+  persisted.
 
 ## Notes
 
