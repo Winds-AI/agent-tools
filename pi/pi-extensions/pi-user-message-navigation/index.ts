@@ -4,7 +4,8 @@
  * Cmd+Up   — move to the previous user message, without a branch summary
  *            or a model turn. The message is restored into the editor
  *            (pi's native /tree semantics); submitting it starts a branch.
- * Cmd+Down — move forward again to the next user message.
+ * Cmd+Down — move forward through user messages, then to the conversation
+ *            endpoint with an empty editor, ready for a new prompt.
  *
  * "Latest branch": the session tree keeps every entry's parent, and entries
  * carry timestamps. The anchor list is built by walking the tree from the
@@ -32,6 +33,7 @@ import type {
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { getKeybindings, type KeyId, type KeybindingsConfig } from "@earendil-works/pi-tui";
 
 type Direction = "older" | "newer";
 
@@ -52,11 +54,42 @@ function isUserMessageEntry(entry: SessionEntry): boolean {
 	return entry.type === "message" && (entry as { message?: { role?: string } }).message?.role === "user";
 }
 
+function keyList(binding: KeyId | KeyId[] | undefined): KeyId[] {
+	if (binding === undefined) return [];
+	return Array.isArray(binding) ? binding : [binding];
+}
+
+function withoutKey(binding: KeyId | KeyId[] | undefined, keyToRemove: KeyId): KeyId | KeyId[] {
+	const next = keyList(binding).filter((key) => key.toLowerCase() !== keyToRemove.toLowerCase());
+	if (next.length === 0) return [];
+	return next.length === 1 ? next[0]! : next;
+}
+
+function releaseFullscreenConflicts() {
+	const keybindings = getKeybindings();
+	const getUserBindings = (keybindings as { getUserBindings?: () => KeybindingsConfig }).getUserBindings;
+	const setUserBindings = (keybindings as { setUserBindings?: (bindings: KeybindingsConfig) => void }).setUserBindings;
+	const getResolvedBindings = (keybindings as { getResolvedBindings?: () => KeybindingsConfig }).getResolvedBindings;
+	if (!getUserBindings || !setUserBindings || !getResolvedBindings) return;
+
+	// Pi fullscreen consumes ctrl+up/down as tui.altScreen.previousPrompt/nextPrompt
+	// before editor/extension shortcuts see them. Remove only those two keys from
+	// the in-memory keybinding manager; do not write keybindings.json and do not
+	// disturb alternate bindings such as ctrl+shift+up/down.
+	const user = getUserBindings.call(keybindings);
+	const resolved = getResolvedBindings.call(keybindings);
+	setUserBindings.call(keybindings, {
+		...user,
+		"tui.altScreen.previousPrompt": withoutKey(resolved["tui.altScreen.previousPrompt"], "ctrl+up"),
+		"tui.altScreen.nextPrompt": withoutKey(resolved["tui.altScreen.nextPrompt"], "ctrl+down"),
+	});
+}
+
 /**
- * Order user messages along the latest path: from the root, at each fork
- * follow the child with the newest timestamp, until the path ends.
+ * Order user messages along the latest path, followed by its endpoint.
+ * At each fork follow the child with the newest timestamp.
  */
-function latestUserMessages(entries: SessionEntry[]): SessionEntry[] {
+function latestNavigationTargets(entries: SessionEntry[]): SessionEntry[] {
 	const childrenOf = new Map<string | null, SessionEntry[]>();
 	for (const entry of entries) {
 		if (!entry.id) continue; // session header is not part of the tree
@@ -76,13 +109,23 @@ function latestUserMessages(entries: SessionEntry[]): SessionEntry[] {
 		path.push(node);
 		node = newest(childrenOf.get(node.id) ?? []);
 	}
-	return path.filter(isUserMessageEntry);
+	const targets = path.filter(isUserMessageEntry);
+	const endpoint = path.at(-1);
+	// Native /tree navigation to a non-prompt entry restores the conversation
+	// through that entry without recalling text. User/custom messages instead
+	// rewind to their parent, so they cannot serve as an empty-editor endpoint.
+	if (targets.length > 0 && endpoint && !isUserMessageEntry(endpoint) && endpoint.type !== "custom_message") {
+		targets.push(endpoint);
+	}
+	return targets;
 }
 
 export default function (pi: ExtensionAPI) {
-	/** User messages along the latest path (rebuilt after session changes). */
+	pi.on("session_start", () => releaseFullscreenConflicts());
+
+	/** User messages plus the latest path's endpoint (rebuilt after changes). */
 	let anchors: SessionEntry[] | undefined;
-	/** Cursor into `anchors`: the message we are on is anchors[index - 1]. */
+	/** Current target index; initially at the endpoint, or past a final prompt. */
 	let index: number | undefined;
 	/** Text of the message we last navigated to (not a user draft). */
 	let selectedText: string | undefined;
@@ -98,8 +141,9 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.isIdle() || navigating) return;
 
 		if (!anchors) {
-			anchors = latestUserMessages(ctx.sessionManager.getEntries());
-			index = anchors.length; // newest point, one past the last anchor
+			anchors = latestNavigationTargets(ctx.sessionManager.getEntries());
+			const last = anchors.at(-1);
+			index = last && !isUserMessageEntry(last) ? anchors.length - 1 : anchors.length;
 		}
 		if (anchors.length === 0 || index === undefined) return;
 
@@ -119,6 +163,10 @@ export default function (pi: ExtensionAPI) {
 
 		navigating = true;
 		try {
+			// Pi only restores navigateTree's target prompt into the editor when
+			// the editor is empty. After the first navigation the editor contains
+			// the previously selected prompt, so clear it before moving again.
+			ctx.ui.setEditorText("");
 			const result = await ctx.navigateTree(target.id, { summarize: false });
 			if (!result.cancelled) {
 				index = next;
