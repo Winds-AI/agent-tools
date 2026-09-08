@@ -137,6 +137,11 @@ export async function analyzeVideo(source, question, apiKey = undefined) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  const fail = error => {
+    if (error.code !== "EPIPE") process.stderr.write(`Error: ${error.message}\n`);
+    process.exitCode = 1;
+  };
+  process.stdout.on("error", fail);
   const args = process.argv.slice(2);
   if (args.length === 1 && ["-h", "--help"].includes(args[0])) {
     process.stdout.write(USAGE);
@@ -145,6 +150,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
     process.exitCode = 1;
   } else {
     analyzeVideo(...args).then(({ text }) => process.stdout.write(text + "\n"))
-      .catch(error => { process.stderr.write(`Error: ${error.message}\n`); process.exitCode = 1; });
+      .catch(fail);
   }
 }

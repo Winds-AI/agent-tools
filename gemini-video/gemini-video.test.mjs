@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { analyzeVideo } from './gemini-video.mjs';
 
@@ -79,4 +79,43 @@ test('CLI misuse writes no answer to stdout and fails', () => {
   assert.equal(run.status, 1);
   assert.equal(run.stdout, '');
   assert.match(run.stderr, /Usage:/);
+});
+
+test('a closed output pipe exits quietly', async () => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./gemini-video.mjs', import.meta.url)), '--help']);
+  const closed = new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', code => resolve(code));
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+  child.stdout.destroy();
+  assert.equal(await closed, 1);
+  assert.equal(stderr, '');
+});
+
+test('CLI uses the current environment key before the user-local key file', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'gemini-video-auth-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await mkdir(join(home, '.config/gemini-video'), { recursive: true });
+  await writeFile(join(home, '.config/gemini-video/api-key'), 'file-key\n', { mode: 0o600 });
+  for (const envKey of ['environment-key', '']) {
+    const expected = envKey || 'file-key';
+    const mock = `
+      import assert from 'node:assert/strict';
+      globalThis.fetch = async (url, options) => {
+        assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+        assert.equal(options.headers['x-goog-api-key'], ${JSON.stringify(expected)});
+        return Response.json(${JSON.stringify(completed)});
+      };
+    `;
+    const run = spawnSync(process.execPath, [
+      '--import', 'data:text/javascript,' + encodeURIComponent(mock),
+      fileURLToPath(new URL('./gemini-video.mjs', import.meta.url)),
+      'https://youtu.be/example', 'Which tab opens?',
+    ], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, GEMINI_API_KEY: envKey } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, '00:02: A tab opens.\n');
+    assert.equal(run.stderr, '');
+  }
 });
