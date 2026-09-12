@@ -34,6 +34,7 @@ The other top-level directories contain standalone agent utilities and are not P
 | --- | --- | --- |
 | Codex Ears | `codex-ears` | Audio transcription via the ChatGPT transcribe endpoint |
 | Codex Eyes | `codex-eyes` | Image analysis via Codex (GPT-5.6 Luna) |
+| Codex Image | `codex-image` | Image generation via Codex |
 | Gemini Eyes | `gemini-eyes` | Image analysis via Antigravity (Gemini 3.8 Flash) |
 | Gemini Video | `gemini-video` | Directed video analysis via the Gemini API |
 | Pi Session MD | `pi-session-md` | Convert pi session JSONL files to markdown |
