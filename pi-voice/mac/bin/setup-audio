@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Create the local speech-detection runtime. Never installs system packages.
+set -euo pipefail
+root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$root"
+
+python3 - "$root/audio/silero_vad.onnx" <<'PY'
+import hashlib, sys
+expected = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
+actual = hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()
+if actual != expected:
+    raise SystemExit("VAD model checksum mismatch; refusing to continue.")
+PY
+
+python3 -m venv "$root/.venv"
+"$root/.venv/bin/python" -m pip install --disable-pip-version-check --quiet -r "$root/audio/requirements.txt"
+"$root/.venv/bin/python" -c 'import av, numpy, onnxruntime'
+
+printf 'Local speech detection ready.\n'
+printf 'Load the extension in Pi with:\n\n  pi -e %s/index.ts\n\n' "$root"
+command -v codex >/dev/null 2>&1 && printf 'Codex login found on PATH.\n' || printf 'Note: install and run `codex login` once so voice can use the subscription credential.\n'

@@ -1,0 +1,17 @@
+{
+  "name": "pi-voice",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "GPT-Live voice conversations for Pi on macOS using the Codex subscription (WebRTC)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:audio": ".venv/bin/python -m unittest discover -s test -p '*_test.py'",
+    "check": "node --check src/errors.mjs && node --check src/auth.mjs && node --check src/call.mjs && node --check src/conversation.mjs && node --check src/media.mjs && node --check src/voice.mjs && node --check media/chromium-helper.mjs && python3 -m py_compile audio/worker.py",
+    "smoke": "node test/smoke-live.mjs"
+  }
+}

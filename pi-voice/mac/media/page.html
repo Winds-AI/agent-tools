@@ -1,0 +1,436 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>pi-voice media</title></head>
+<body>
+<audio id="out" autoplay></audio>
+<script>
+const INPUT_WAV = "__INPUT_WAV__";
+
+const POST = (path, body) =>
+  fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+
+const send = (event) => POST("/event", event);
+window.onerror = (message) => send({ kind: "error", message: String(message), fatal: false });
+window.onunhandledrejection = (e) => send({ kind: "error", message: "rejection: " + String(e.reason), fatal: false });
+
+const WORKLET = `
+class GateProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.capacity = 240000; // 10 s at 24 kHz
+    this.buffer = new Float32Array(this.capacity);
+    this.readIndex = 0;
+    this.writeIndex = 0;
+    this.count = 0;
+    this.released = false;
+    this.streaming = false;
+    this.trimPending = true;
+    this.postPcm = true;
+    this.acc = new Float32Array(480);
+    this.accCount = 0;
+    // Pitch-preserving catch-up (Hann overlap-add, like atempo): input grains
+    // start every 15 ms and are laid down every 10 ms, so speech is squeezed to
+    // 1.5x with the same pitch. Only ever applied to the connect backlog.
+    this.speed = 1.5;
+    this.grain = 480;   // 20 ms window
+    this.hopOut = 240;  // 10 ms output hop
+    this.hopIn = 360;   // 15 ms input hop
+    this.floor = 768;   // below ~32 ms of backlog, stop compressing
+    this.alignRange = 72; // +/-3 ms alignment search
+    // The overlap-add reads grain halves that trail the 1.5x consumption
+    // cursor, so never discard closer than this to the cursor.
+    this.lookBehind = 1024;
+    this.olaOut = 0;
+    this.olaDropped = 0;
+    this.deltaK = -1;
+    this.deltaPrev = 0;
+    this.deltaCurr = 0;
+    this.deltaNext = 0;
+    this.port.onmessage = (e) => {
+      if (e.data === "release") {
+        this.released = true;
+        this.trimPending = true;
+        this.streaming = false;
+      } else if (e.data === "hold") {
+        this.released = false;
+        this.streaming = false;
+        this.count = 0;
+        this.trimPending = true;
+        this.readIndex = this.writeIndex;
+      } else if (e.data === "pcm-off") {
+        this.postPcm = false;
+        this.accCount = 0;
+      } else if (e.data === "pcm-on") {
+        this.postPcm = true;
+      }
+    };
+  }
+  push(value) {
+    this.buffer[this.writeIndex] = value;
+    this.writeIndex = (this.writeIndex + 1) % this.capacity;
+    if (this.count < this.capacity) this.count++;
+    else this.readIndex = (this.readIndex + 1) % this.capacity;
+  }
+  drop(samples) {
+    const whole = Math.min(samples, this.count);
+    this.readIndex = (this.readIndex + whole) % this.capacity;
+    this.count -= whole;
+  }
+  at(offset) {
+    return this.buffer[(this.readIndex + offset) % this.capacity];
+  }
+  sampleAt(index) {
+    const relative = index - this.olaDropped;
+    if (relative < 0 || relative >= this.count) return 0;
+    return this.buffer[(this.readIndex + relative) % this.capacity];
+  }
+  // Speech recorded before the session connects is kept, not dropped. Cap the
+  // replay at 3 s and skip leading near-silence (keeping 300 ms of context).
+  trim() {
+    const REPLAY_CAP = 72000;
+    const PRE_ROLL = 7200;
+    const WINDOW = 480;
+    const THRESHOLD = 0.004;
+    if (this.count > REPLAY_CAP) this.drop(this.count - REPLAY_CAP);
+    let offset = 0;
+    while (offset + WINDOW <= this.count) {
+      let sum = 0;
+      for (let i = 0; i < WINDOW; i++) {
+        const value = this.at(offset + i);
+        sum += value * value;
+      }
+      if (Math.sqrt(sum / WINDOW) > THRESHOLD) break;
+      offset += WINDOW;
+    }
+    if (offset > 0) this.drop(Math.max(0, offset - PRE_ROLL));
+    this.port.postMessage({ buffered: { ms: Math.round(this.count / 24) } });
+  }
+  // WSOLA alignment: find the +/-3 ms shift of the next grain that best
+  // matches the previous grain's tail, so overlapping windows add
+  // constructively instead of cancelling.
+  alignment(grainIndex) {
+    if (grainIndex <= 0) return 0;
+    const nominal = grainIndex * this.hopIn;
+    const reference = (grainIndex - 1) * this.hopIn + this.deltaCurr + this.hopOut;
+    let best = 0;
+    let bestScore = -Infinity;
+    for (let offset = -this.alignRange; offset <= this.alignRange; offset += 2) {
+      let score = 0;
+      for (let j = 0; j < this.hopOut; j += 2) {
+        score += this.sampleAt(nominal + offset + j) * this.sampleAt(reference + j);
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = offset;
+      }
+    }
+    return best;
+  }
+  grainDelta(grainIndex) {
+    if (grainIndex === this.deltaK) return this.deltaCurr;
+    if (grainIndex === this.deltaK - 1) return this.deltaPrev;
+    return this.deltaNext;
+  }
+  drainCompressed(output) {
+    const startK = Math.floor(this.olaOut / this.hopOut);
+    if (this.deltaK === -1) {
+      this.deltaK = 0;
+      this.deltaPrev = 0;
+      this.deltaCurr = 0;
+      this.deltaNext = this.alignment(1);
+    }
+    while (this.deltaK < startK) {
+      this.deltaPrev = this.deltaCurr;
+      this.deltaCurr = this.deltaNext;
+      this.deltaK++;
+      this.deltaNext = this.alignment(this.deltaK + 1);
+    }
+    for (let i = 0; i < output.length; i++) {
+      const position = this.olaOut + i;
+      const grainIndex = Math.floor(position / this.hopOut);
+      const fraction = position - grainIndex * this.hopOut;
+      const weightA = 0.5 * (1 - Math.cos((2 * Math.PI * (fraction + 0.5)) / this.grain));
+      let value = weightA * this.sampleAt(grainIndex * this.hopIn + this.grainDelta(grainIndex) + fraction);
+      if (grainIndex > 0) {
+        const weightB = 0.5 * (1 - Math.cos((2 * Math.PI * (fraction + this.hopOut + 0.5)) / this.grain));
+        value += weightB * this.sampleAt((grainIndex - 1) * this.hopIn + this.grainDelta(grainIndex - 1) + this.hopOut + fraction);
+      }
+      output[i] = value;
+    }
+    this.olaOut += output.length;
+    const target = Math.max(0, Math.round(this.olaOut * this.speed) - this.lookBehind);
+    const consumed = target - this.olaDropped;
+    if (consumed > 0) {
+      const actual = Math.min(consumed, Math.max(0, this.count - 1));
+      this.drop(actual);
+      this.olaDropped += actual;
+    }
+  }
+  process(inputs, outputs) {
+    const input = inputs[0] && inputs[0][0];
+    const output = outputs[0][0];
+    if (input && this.postPcm) {
+      for (let i = 0; i < input.length; i++) {
+        this.acc[this.accCount++] = input[i];
+        if (this.accCount === 480) {
+          this.port.postMessage({ pcm: this.acc.slice(0) });
+          this.accCount = 0;
+        }
+      }
+    }
+    if (!this.released) {
+      if (input) for (let i = 0; i < input.length; i++) this.push(input[i]);
+      output.fill(0);
+      return true;
+    }
+    if (this.trimPending) {
+      this.trimPending = false;
+      this.olaOut = 0;
+      this.olaDropped = 0;
+      this.deltaK = -1;
+      this.trim();
+    }
+    if (this.streaming) {
+      for (let i = 0; i < output.length; i++) output[i] = input ? input[i] : 0;
+      return true;
+    }
+    if (this.count > this.floor) {
+      this.drainCompressed(output);
+      if (input) for (let i = 0; i < input.length; i++) this.push(input[i]);
+      return true;
+    }
+    // Backlog consumed: go live. At most ~32 ms is discarded here, which is
+    // inaudible.
+    if (this.count > 0) this.drop(this.count);
+    if (this.olaOut > 0) {
+      this.port.postMessage({ catchup: { outputMs: Math.round(this.olaOut / 24), consumedMs: Math.round(this.olaDropped / 24) } });
+      this.olaOut = 0;
+      this.olaDropped = 0;
+    }
+    this.streaming = true;
+    for (let i = 0; i < output.length; i++) output[i] = input ? input[i] : 0;
+    return true;
+  }
+}
+registerProcessor("gate", GateProcessor);
+`;
+
+let pc = null;
+let dc = null;
+let outbox = [];
+let worklet = null;
+let destination = null;
+let sourceTrack = null;
+let remotePoll = null;
+let remoteActive = false;
+let pending = [];
+let pendingCount = 0;
+const audioEl = document.getElementById("out");
+
+function toBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+function flushPcm() {
+  if (pendingCount === 0) return;
+  const samples = new Float32Array(pendingCount);
+  let offset = 0;
+  for (const frame of pending) {
+    samples.set(frame, offset);
+    offset += frame.length;
+  }
+  pending = [];
+  pendingCount = 0;
+  const i16 = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const value = Math.max(-1, Math.min(1, samples[i]));
+    i16[i] = value < 0 ? Math.round(value * 32768) : Math.round(value * 32767);
+  }
+  POST("/pcm", { audio: toBase64(new Uint8Array(i16.buffer)) });
+}
+
+function attachRemote(stream) {
+  audioEl.srcObject = stream;
+  try {
+    const ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    remotePoll = setInterval(() => {
+      analyser.getFloatTimeDomainData(buffer);
+      let sum = 0;
+      for (const value of buffer) sum += value * value;
+      const active = Math.sqrt(sum / buffer.length) > 0.002;
+      if (active !== remoteActive) {
+        remoteActive = active;
+        send({ kind: "audio", active });
+      }
+    }, 200);
+  } catch (error) {
+    send({ kind: "error", message: "remote audio analysis failed: " + String(error), fatal: false });
+  }
+}
+
+function sendToModel(event) {
+  if (dc && dc.readyState === "open") {
+    dc.send(JSON.stringify(event));
+    return;
+  }
+  // Events sent right after the session connects can beat the data channel;
+  // hold them until it opens instead of dropping them.
+  if (outbox.length < 64) outbox.push(event);
+}
+
+function closePc() {
+  outbox = [];
+  if (dc) {
+    try { dc.close(); } catch {}
+    dc = null;
+  }
+  if (pc) {
+    try { pc.close(); } catch {}
+    pc = null;
+  }
+  if (remotePoll) {
+    clearInterval(remotePoll);
+    remotePoll = null;
+  }
+  remoteActive = false;
+  audioEl.srcObject = null;
+  worklet.port.postMessage("hold");
+}
+
+async function connect() {
+  if (pc) return;
+  pc = new RTCPeerConnection();
+  dc = pc.createDataChannel("oai-events");
+  dc.onopen = () => {
+    send({ kind: "dc-open" });
+    for (const event of outbox.splice(0)) dc.send(JSON.stringify(event));
+  };
+  dc.onmessage = (e) => send({ kind: "dc", data: e.data });
+  dc.onclose = () => send({ kind: "dc-close" });
+  pc.onconnectionstatechange = () => {
+    send({ kind: "pc-state", state: pc.connectionState });
+    if (pc.connectionState === "connected") {
+      worklet.port.postMessage("release");
+      send({ kind: "connected" });
+    } else if (pc.connectionState === "failed") {
+      send({ kind: "error", message: "WebRTC connection failed", fatal: true });
+    }
+  };
+  pc.ontrack = (e) => {
+    if (e.streams[0]) attachRemote(e.streams[0]);
+  };
+  pc.addTrack(sourceTrack, destination.stream);
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    const timer = setTimeout(resolve, 2500);
+    pc.addEventListener("icegatheringstatechange", () => {
+      if (pc.iceGatheringState === "complete") {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+  await POST("/offer", { sdp: pc.localDescription.sdp });
+}
+
+async function handle(cmd) {
+  switch (cmd.type) {
+    case "connect": await connect(); break;
+    case "answer":
+      if (pc) await pc.setRemoteDescription({ type: "answer", sdp: cmd.sdp });
+      break;
+    case "send":
+      sendToModel(cmd.event);
+      break;
+    case "mute":
+      if (sourceTrack) sourceTrack.enabled = !cmd.muted;
+      if (worklet) {
+        if (cmd.muted) worklet.port.postMessage("hold");
+        worklet.port.postMessage(cmd.muted ? "pcm-off" : "pcm-on");
+      }
+      send({ kind: "muted", muted: Boolean(cmd.muted) });
+      break;
+    case "close":
+      closePc();
+      send({ kind: "state", state: "armed" });
+      break;
+    case "stop":
+      closePc();
+      send({ kind: "state", state: "stopped" });
+      break;
+    default:
+      send({ kind: "error", message: "unsupported media command: " + String(cmd.type), fatal: false });
+  }
+}
+
+async function poll() {
+  try {
+    const commands = await (await fetch("/command")).json();
+    for (const command of commands) await handle(command);
+  } catch {}
+}
+
+async function main() {
+  // Capture first: Chrome startup already costs ~1 s, so do not spend more of
+  // the user's first sentence on audio-graph setup.
+  const mic = INPUT_WAV
+    ? undefined
+    : await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+  const ctx = new AudioContext({ sampleRate: 24000 });
+  await ctx.resume();
+  const workletUrl = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
+  await ctx.audioWorklet.addModule(workletUrl);
+  worklet = new AudioWorkletNode(ctx, "gate", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
+  destination = ctx.createMediaStreamDestination();
+  worklet.connect(destination);
+  worklet.port.onmessage = (e) => {
+    const message = e.data;
+    if (message && message.pcm) {
+      pending.push(message.pcm);
+      pendingCount += message.pcm.length;
+      if (pendingCount >= 2400) flushPcm();
+    } else if (message && message.catchup) {
+      send({ kind: "catchup", ...message.catchup });
+    } else if (message && message.buffered) {
+      send({ kind: "buffered", ...message.buffered });
+    }
+  };
+  setInterval(flushPcm, 100);
+
+  if (INPUT_WAV) {
+    const raw = await (await fetch("/input.wav")).arrayBuffer();
+    const decoded = await ctx.decodeAudioData(raw);
+    const source = ctx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(worklet);
+    source.start();
+  } else {
+    ctx.createMediaStreamSource(mic).connect(worklet);
+  }
+  sourceTrack = destination.stream.getAudioTracks()[0];
+  send({ kind: "state", state: "armed" });
+  setInterval(poll, 50);
+}
+
+main().catch((error) => send({ kind: "error", message: String(error), fatal: true }));
+</script>
+</body>
+</html>
