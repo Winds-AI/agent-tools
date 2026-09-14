@@ -1,0 +1,8 @@
+work/
+node_modules/
+.env
+.env.*
+*.wav
+.venv/
+__pycache__/
+*.pyc

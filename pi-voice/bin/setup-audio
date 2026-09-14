@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$root"
+printf '%s\n' '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3  audio/silero_vad.onnx' | sha256sum --check --status
+python3 -m venv "$root/.venv"
+"$root/.venv/bin/python" -m pip install --disable-pip-version-check -r "$root/audio/requirements.txt"
+"$root/.venv/bin/python" -c 'import av, numpy, onnxruntime'
+printf 'Local audio worker ready. Enable this extension with pi -V.\n'

@@ -1,0 +1,112 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>GPT-Live sessions — events, channels, timelines</title>
+<style>
+:root{--bg:#111;--card:#1b1b1b;--line:#333;--fg:#ddd;--dim:#999;--you:#ff9500;--live:#4da3ff;--pi:#34c759;--sys:#af52de;--warn:#ff6b6b}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;margin:24px;max-width:1100px;line-height:1.5}
+h1{font-size:22px}h2{font-size:17px;margin-top:34px;border-bottom:1px solid var(--line);padding-bottom:6px}
+h3{font-size:14px;color:#8ab4ff}
+code{background:#262626;padding:1px 5px;border-radius:4px;font-size:12.5px;color:#9c9}
+table{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0}
+td,th{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:#222;color:#aaa;font-weight:600}
+.tl{position:relative;margin:14px 0 10px 0;padding-left:0}
+.row{display:grid;grid-template-columns:170px 1fr;gap:10px;margin-bottom:4px;align-items:start}
+.t{font-size:12px;color:var(--dim);text-align:right;padding-top:2px;font-variant-numeric:tabular-nums}
+.ev{border-left:3px solid var(--line);padding:4px 10px;margin:0 0 6px 0;background:var(--card);border-radius:0 6px 6px 0;font-size:13px}
+.ev.you{border-color:var(--you)} .ev.live{border-color:var(--live)} .ev.pi{border-color:var(--pi)} .ev.sys{border-color:var(--sys)} .ev.off{opacity:.45}
+.ev b{font-size:12.5px} .ev span{color:var(--dim);font-size:12px}
+.lane{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.lane.you{background:var(--you)} .lane.live{background:var(--live)} .lane.pi{background:var(--pi)} .lane.sys{background:var(--sys)}
+.legend{font-size:12px;color:var(--dim);margin:6px 0 2px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:12px 0;font-size:13.5px}
+.warn{color:var(--warn)}
+ul{margin:6px 0} li{margin:3px 0}
+.arrow{color:var(--dim)}
+</style></head><body>
+
+<h1>GPT-Live sessions — events, channels &amp; harness timelines</h1>
+<p style="color:var(--dim);font-size:13px">Reference for <code>pi-voice</code>. Facts from OpenAI's Live sessions &amp; delegation guides (fetched 2026-09-13) plus the extension's own behavior.</p>
+
+<h2>The three text-append channels</h2>
+<div class="box">
+<table>
+<tr><th>Channel</th><th>Documented use case</th><th>Spoken?</th><th>Cap</th></tr>
+<tr><td><code>session.instructions.append</code></td><td>"System-level instructions for the live model, such as a greeting, disclosure, or direction to stop speaking." Can interrupt current speech (e.g. guardrail redirects).</td><td>shapes speech; may interrupt</td><td rowspan="3">500 tokens per append; requires <code>delegation_id</code> (<code>null</code> = session-wide)</td></tr>
+<tr><td><code>session.thinking.append</code></td><td>"Factual context without asking the model to say it immediately" — quiet context for later answers. Documented pattern: background progress ("Checking Thursday availability…"), UI/state summaries. <span class="warn">Not a privacy boundary.</span></td><td>no (not immediately)</td></tr>
+<tr><td><code>session.commentary.append</code></td><td>"Information for the model to say aloud" — results of delegated work. The model is "trained to paraphrase the appended text." Send only after actions verifiably succeed.</td><td>yes (may paraphrase)</td></tr>
+</table>
+pi-voice uses <code>commentary</code> for Pi's result (both in-session and after reopen) and nothing else — no <code>thinking</code>, no <code>instructions</code>.</div>
+
+<h2>Why every append needs <code>delegation_id</code></h2>
+<div class="box">
+The field routes the context: pass the <b>delegation's ID</b> when the append is an update about that delegated task; pass <code>null</code> for general session-wide context. <code>null</code> itself is meaningful, so the field is mandatory. A non-null ID must name a known client delegation (IDs from <code>session.delegation.created</code> are opaque — return unchanged). Even with an ID, instructions still apply to the live session — an ID never becomes a separate backend prompt. pi-voice appends results session-wide (<code>null</code>) because Pi's result usually arrives after the original session closed.</div>
+
+<h2>Event reference</h2>
+<h3>Client → server</h3>
+<table>
+<tr><th>Event</th><th>Purpose</th><th>Notes / limits</th></tr>
+<tr><td><code>session.start</code></td><td>Opens the session: model, instructions, audio format/voice, delegation mode, input history</td><td>history ≤128 messages / 8,192 tokens; roles user/assistant/developer only (no system); startup instructions ≤16,384 tokens; <code>store:false</code> supported</td></tr>
+<tr><td><code>session.input_audio.append</code></td><td>Streams microphone audio</td><td>keep sending through silence; network backlog must be drained (pi-voice fails at &gt;3 s buffered)</td></tr>
+<tr><td><code>session.input_audio.mute / .unmute</code></td><td>Gate the mic</td><td class="warn">does NOT stop inference, delegated work, or generated speech</td></tr>
+<tr><td><code>session.thinking.append</code></td><td>Quiet factual context</td><td>≤500 tokens; delegation_id required</td></tr>
+<tr><td><code>session.commentary.append</code></td><td>Content to say aloud</td><td>≤500 tokens; may be paraphrased</td></tr>
+<tr><td><code>session.instructions.append</code></td><td>Behavior directives</td><td>≤500 tokens; can interrupt speech in progress</td></tr>
+<tr><td><code>session.close</code></td><td>Graceful close</td><td>cancels queued responses; <code>session.closed</code> carries final usage</td></tr>
+</table>
+<h3>Server → client</h3>
+<table>
+<tr><th>Event</th><th>Meaning</th><th>Gotchas</th></tr>
+<tr><td><code>session.started</code></td><td>Session confirmed (model + id)</td><td>only after this may you send commands</td></tr>
+<tr><td><code>session.input_transcript.delta</code></td><td>What YOU said (fragments, start_ms/end_ms)</td><td>arrives slightly after speech</td></tr>
+<tr><td><code>session.output_transcript.delta</code></td><td>What the model says (fragments)</td><td>delivery uneven; no wall-clock alignment; no "turn completed" event</td></tr>
+<tr><td><code>session.output_audio.delta</code></td><td>Speech audio (PCM)</td><td class="warn">no timing fields and no audio-done event — pi-voice uses speech-energy detection for activity</td></tr>
+<tr><td><code>session.delegation.created</code></td><td>Model handed work off (client or responses)</td><td>metadata only (id, target, offset_ms) — NOT the utterance; client reconstructs intent from transcripts</td></tr>
+<tr><td><code>session.usage.updated</code></td><td>Cumulative billed seconds</td><td>snapshots, not increments</td></tr>
+<tr><td><code>session.closed</code></td><td>Session finalized</td><td class="warn">the ONLY finalization proof (final usage inside)</td></tr>
+<tr><td><code>error</code></td><td>Rejections, moderation</td><td>some moderation arrives here without ending the session</td></tr>
+<tr><td><code>response.event</code></td><td>Nested Responses completions (Responses delegation only)</td><td>dispatch on inner type; preserve outer delegation_id</td></tr>
+</table>
+
+<h2>Timeline 1 — speak → delegate → fast result (one session)</h2>
+<div class="legend"><span class="lane you"></span>you <span class="lane live"></span>Live session <span class="lane pi"></span>Pi (WSL) <span class="lane sys"></span>extension logic</div>
+<div class="tl">
+<div class="row"><div class="t">T+0.0s</div><div class="ev you"><b>VAD wake</b> <span>local mic detects speech; 300 ms pre-roll + startup buffer capture the first words; no connection exists yet (free)</span></div></div>
+<div class="row"><div class="t">T+0.1s</div><div class="ev sys"><b>connect</b> <span>WS → session.start (instructions, history incl. last Pi result, client delegation) → session.started</span></div></div>
+<div class="row"><div class="t">T+0.3s</div><div class="ev live"><b>catch-up</b> <span>buffered speech streamed at 1.5× (pitch preserved) until the stream reaches live; then normal speed</span></div></div>
+<div class="row"><div class="t">T+4s</div><div class="ev you"><b>you finish</b> <span>silence; voice model replies / refines if needed</span></div></div>
+<div class="row"><div class="t">T+5s</div><div class="ev live"><b>session.delegation.created</b> <span>model decided Pi should act (client target)</span></div></div>
+<div class="row"><div class="t">T+6.2s</div><div class="ev sys"><b>dispatch</b> <span>1.2 s debounce for trailing speech → U:/A: transcript → sendUserMessage(steer) → thinking… no, nothing appended (model knows it delegated) → grace clock reset</span></div></div>
+<div class="row"><div class="t">T+8s</div><div class="ev pi"><b>Pi result lands &lt;5s</b> <span>agent_settled → commentary.append(result) → model voices it in the SAME session</span></div></div>
+<div class="row"><div class="t">T+13s</div><div class="ev sys"><b>grace expires</b> <span>no speech, no playback, no dispatch for 5 s → session.close → session.closed (final usage; seconds added to the status-line total) → back to listening</span></div></div>
+</div>
+
+<h2>Timeline 2 — long-running work (close, then announce)</h2>
+<div class="tl">
+<div class="row"><div class="t">T+0s</div><div class="ev you"><b>speech → delegate → dispatch</b> <span>same as above</span></div></div>
+<div class="row"><div class="t">T+6s</div><div class="ev sys"><b>grace expires</b> <span>Pi still working → session closes (billing stops). Mic stays armed locally.</span></div></div>
+<div class="row"><div class="t">T+90s</div><div class="ev pi"><b>Pi finishes</b> <span>agent_settled fires with the answer</span></div></div>
+<div class="row"><div class="t">T+90.2s</div><div class="ev sys"><b>reopen to announce</b> <span>new session; seeded history already contains the result → commentary.append(result) → model speaks it</span></div></div>
+<div class="row"><div class="t">T+96s</div><div class="ev sys"><b>close again</b> <span>5 s after the announcement (or immediately if you interrupt with speech → normal conversation)</span></div></div>
+</div>
+
+<h2>Timeline 3 — client vs Responses delegation</h2>
+<div class="box">
+<b>Client delegation</b> (pi-voice uses this): model emits <code>delegation.created (target: client)</code> → <b>your code</b> builds the request, runs the agent, enforces permissions, then feeds results back with delegation-scoped appends (<code>commentary</code> = spoken, <code>thinking</code> = quiet). You own the context.<br><br>
+<b>Responses delegation</b>: the Live model itself calls a configured Responses backend model (chosen at session creation); backend events arrive nested in <code>response.event</code> envelopes; function results go back via <code>response.item.create</code> + an explicit <code>response.create</code> (appending a function result does NOT auto-continue). You only implement custom functions and approvals. Mode is fixed at session creation — switching mid-session fails with <code>immutable_field_update</code>.
+</div>
+
+<h2>How this differs from a normal text LLM call</h2>
+<div class="box"><ul>
+<li><b>Billed by duration</b> ($0.05/min, per second, silence included) — not by tokens. Architecture exists to minimize connected time.</li>
+<li><b>Full-duplex</b> — the model listens while it speaks; there are no request/response turns, and no turn-completed event.</li>
+<li><b>Audio-first</b> — output is speech; transcripts are unaligned byproduct fragments. Audio deltas have no done marker (hence energy-based activity detection).</li>
+<li><b>Commentary may be paraphrased</b> — never rely on verbatim playback; the terminal holds the real answer.</li>
+<li><b>Context is staged</b> — a seeded history at connect (≤128 msgs / 8,192 tokens, no system role) + three mid-session append channels (≤500 tokens each, delegation_id mandatory).</li>
+<li><b>128K session window with automatic compaction</b> — old history is summarized by the API as it fills.</li>
+<li><b>Muting ≠ pausing</b> — muting the mic does not stop inference, delegated work, or generated speech.</li>
+<li><b><code>session.closed</code> is the only finalization proof</b> — usage.updated values are cumulative snapshots.</li>
+<li><b>Audio + text only</b> — no image or file input on this model.</li>
+</ul></div>
+
+<p style="color:var(--dim);font-size:12px">Sources: developers.openai.com/api/docs/guides/live, /live-conversations, /live-delegation (2026-09-13). Empirical: Codex OAuth tokens open the WS but session.start is denied ("Voice session access denied") — Live needs a platform key.</p>
+</body></html>

@@ -1,0 +1,24 @@
+{
+  "name": "pi-voice",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Opt-in GPT-Live 1 conversations with client-managed delegation to Pi",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:audio": ".venv/bin/python -m unittest discover -s test -p '*_test.py'",
+    "check": "node --check src/live.mjs && node --check src/media.mjs && node --check src/processor.mjs && node --check src/conversation.mjs && node --check src/voice.mjs && python3 -m py_compile audio/worker.py"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}
