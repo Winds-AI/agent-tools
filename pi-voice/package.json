@@ -1,9 +1,9 @@
 {
   "name": "pi-voice",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "GPT-Live voice conversations for Pi on macOS using the Codex subscription (WebRTC)",
+  "description": "GPT-Live voice conversations for Pi over the Codex subscription (WebRTC)",
   "license": "MIT",
   "engines": {
     "node": ">=22"

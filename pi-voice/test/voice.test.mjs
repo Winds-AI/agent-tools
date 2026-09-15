@@ -130,6 +130,22 @@ test("muting keeps Pi results audible and never re-enables the microphone", asyn
   assert.ok(["armed", "live"].includes(h.session.phase));
 });
 
+test("muting during warmup still completes the media host and stays muted", async () => {
+  const h = harness({ graceMs: 1000 });
+  const start = h.session.start();
+  await h.session.toggleMute();
+  await start;
+  assert.equal(h.session.phase, "muted");
+  assert.equal(h.state.mutes.at(-1), true, "capture must be gated during warmup");
+  // Speech seen by an already-live media host while muted must not wake anything.
+  h.state.options.onSpeech(true);
+  await delay(30);
+  assert.equal(h.session.phase, "muted");
+  await h.session.toggleMute();
+  assert.equal(h.session.phase, "armed", "unmute after warmup returns to listening");
+  await h.session.shutdown();
+});
+
 test("does not reuse a delegation from a closed session", async () => {
   const h = harness({ graceMs: 1000 });
   await live(h);
@@ -157,7 +173,7 @@ test("does not reuse a delegation from a closed session", async () => {
   );
 });
 
-test("surfaces the VAD level for tuning", async () => {
+test("surfaces the VAD level and catch-up state for tuning", async () => {
   const h = harness({ graceMs: 1000 });
   await h.session.start();
   h.state.options.onLevel({ vad: 0.42, db: -37.5 });
@@ -165,6 +181,12 @@ test("surfaces the VAD level for tuning", async () => {
   assert.equal(status.level.vad, 0.42);
   assert.equal(status.level.db, -37.5);
   assert.equal(typeof status.level.at, "number");
+  h.state.options.onSpeech(true);
+  await delay(30);
+  h.state.options.onSpeech(false);
+  assert.equal(h.state.statuses.at(-1).catchingUp, true, "a fresh connection starts in catch-up");
+  h.state.options.onTelemetry({ type: "catchup", outputMs: 900, consumedMs: 1350 });
+  assert.equal(h.state.statuses.at(-1).catchingUp, false, "catch-up ends when the backlog drains");
 });
 
 test("reports a missing Codex login and mutes", async () => {
@@ -178,4 +200,15 @@ test("reports a missing Codex login and mutes", async () => {
   await delay(40);
   assert.equal(h.session.phase, "muted");
   assert.ok(h.state.notifications.some(([, level]) => level === "error"));
+});
+
+test("media warnings are surfaced without stopping voice", async () => {
+  const h = harness({ graceMs: 1000 });
+  await h.session.start();
+  h.state.options.onNotice("No microphone audio is arriving.");
+  assert.ok(
+    h.state.notifications.some(([message, level]) => /microphone/.test(message) && level === "warning"),
+  );
+  assert.equal(h.session.phase, "armed");
+  await h.session.shutdown();
 });

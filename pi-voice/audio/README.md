@@ -3,8 +3,9 @@ Audio is base64 PCM, 24 kHz, signed 16-bit little endian, mono, in exactly
 20 ms frames (960 bytes). It never makes network requests.
 
 - `input`: run Silero VAD on one frame. When the speech state changes, emit
-  `{"type": "activity", "speech": true|false}`. Two positive 32 ms windows at
-  probability ≥ 0.5 start speech; ten windows below 0.35 end it.
+  `{"type": "activity", "speech": true|false}`. Eight consecutive positive
+  32 ms windows (256 ms) at probability ≥ 0.5 start speech; ten windows below
+  0.35 end it. Quieter than -50 dBFS never counts as speech.
 - EOF or termination: release all state. No audio is saved, logged, or stashed.
 
 The extension decides what to do with speech edges: a rising edge while armed

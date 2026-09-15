@@ -3,33 +3,68 @@
  *
  *   npm run smoke
  *
- * It synthesizes a spoken request with the macOS `say` voice, feeds it through
- * the Chromium media host, and expects GPT-Live to delegate to the client.
- * It then answers the delegation and requires the reply to be spoken back.
- * This uses the ChatGPT subscription through the Codex realtime endpoint and
- * consumes voice-minutes; it does not touch Pi itself.
+ * It synthesizes a spoken request (macOS `say`, or Windows SAPI inside WSL),
+ * feeds it through the browser media host in place of the microphone, and
+ * expects GPT-Live to delegate to the client. It then answers the delegation
+ * and requires the reply to be spoken back. This uses the ChatGPT subscription
+ * through the Codex realtime endpoint and consumes voice-minutes; it does not
+ * touch Pi itself.
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { getCodexAuth } from "../src/auth.mjs";
 import { createLiveCall } from "../src/call.mjs";
 import { openMedia } from "../src/media.mjs";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const REQUEST =
   "Please inspect this project and tell me how many source files it contains. Just say the number.";
 const ANSWER = "The project contains 42 source files.";
 const deadlineMs = 75_000;
 
+function insideWSL() {
+  if (process.env.WSL_INTEROP || process.env.WSL_DISTRO_NAME) return true;
+  try {
+    return existsSync("/proc/version") && /microsoft/i.test(readFileSync("/proc/version", "utf8"));
+  } catch {
+    return false;
+  }
+}
+
 function makeWav() {
   const directory = mkdtempSync(join(tmpdir(), "pi-voice-smoke-"));
-  const aiff = join(directory, "ask.aiff");
   const wav = join(directory, "ask.wav");
-  execFileSync("say", ["-v", "Samantha", "-o", aiff, REQUEST], { stdio: "ignore" });
-  execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@24000", "-c", "1", aiff, wav], { stdio: "ignore" });
+  if (process.platform === "darwin") {
+    const aiff = join(directory, "ask.aiff");
+    execFileSync("say", ["-v", "Samantha", "-o", aiff, REQUEST], { stdio: "ignore" });
+    execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@24000", "-c", "1", aiff, wav], {
+      stdio: "ignore",
+    });
+  } else if (insideWSL()) {
+    const windowsTemp = spawnSync("/mnt/c/Windows/System32/cmd.exe", ["/c", "echo %TEMP%"], {
+      encoding: "utf8",
+      timeout: 5000,
+    }).stdout.replace(/[\r\n]+$/, "");
+    const windowsPath = windowsTemp + "\\pi-voice-smoke-ask.wav";
+    const script =
+      "Add-Type -AssemblyName System.Speech; " +
+      "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; " +
+      "$s.SetOutputToWaveFile('" + windowsPath + "'); " +
+      "$s.Rate = 0; $s.Speak('" + REQUEST.replace(/'/g, "''") + "'); $s.Dispose()";
+    execFileSync("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      script,
+    ]);
+    const unixPath = execFileSync("/usr/bin/wslpath", ["-u", windowsPath], {
+      encoding: "utf8",
+    }).trim();
+    execFileSync("cp", [unixPath, wav]);
+  } else {
+    throw new Error("No speech synthesizer for this platform; pass a spoken WAV as argv[2].");
+  }
+  if (!existsSync(wav)) throw new Error("Speech synthesis produced no WAV.");
   return { directory, wav };
 }
 
@@ -53,7 +88,6 @@ async function main() {
     onTelemetry: (event) => console.log("# media:", JSON.stringify(event)),
   });
 
-  let live = false;
   let delegated = false;
   let spoken = false;
   let finished = false;
@@ -136,7 +170,6 @@ async function main() {
   });
   media.answer(call.answer);
   await media.waitConnected();
-  live = true;
   console.log(`# call connected${call.callId ? " (" + call.callId.split("/").pop() + ")" : ""}`);
 
   setTimeout(() => fail("timed out before the delegation result was spoken"), deadlineMs);

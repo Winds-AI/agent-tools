@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-voice_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-exec pi -e "$voice_root/index.ts" "$@"

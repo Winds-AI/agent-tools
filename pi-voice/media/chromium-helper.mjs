@@ -7,16 +7,19 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 /**
- * Chromium media host for pi-voice.
+ * Browser media host for pi-voice.
  *
  * Node owns authentication and call creation; this process owns the microphone,
  * speakers, WebRTC and Opus, because Node has no RTCPeerConnection. It speaks
  * JSON lines on stdio, and the embedded page talks to it over loopback HTTP:
  *
  *   helper -> extension : media.state, media.offer, media.connected, media.pcm,
- *                         media.event, media.audio, media.error
+ *                         media.event, media.audio, media.overflow, media.error
  *   extension -> helper : media.start, media.connect, media.answer, media.send,
  *                         media.mute, media.close, media.stop
+ *
+ * Inside WSL, a Windows Chrome/Edge is used so the microphone and speakers are
+ * native Windows devices; WSLg audio does not carry a usable live microphone.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +67,26 @@ const WINDOWS_BROWSERS = [
       process.env["ProgramFiles(x86)"] && join(process.env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
       process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe"),
     ],
+  },
+];
+
+/** Inside WSL the browser runs on Windows: search /mnt/c and Program Files. */
+const WSL_WINDOWS_BROWSERS = [
+  {
+    name: "Google Chrome (Windows)",
+    prefixes: [
+      "/mnt/c/Program Files/Google/Chrome/Application/",
+      "/mnt/c/Program Files (x86)/Google/Chrome/Application/",
+    ],
+    files: ["chrome.exe"],
+  },
+  {
+    name: "Microsoft Edge (Windows)",
+    prefixes: [
+      "/mnt/c/Program Files/Microsoft/Edge/Application/",
+      "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/",
+    ],
+    files: ["msedge.exe"],
   },
 ];
 
@@ -134,7 +157,7 @@ async function start(message) {
   inputWav = typeof message.inputWav === "string" ? message.inputWav : undefined;
   const browserOverride = typeof message.browser === "string" && message.browser.trim() ? message.browser.trim() : undefined;
 
-  emit({ type: "media.state", state: "starting", detail: "Starting Chromium media host" });
+  emit({ type: "media.state", state: "starting", detail: "Starting browser media host" });
 
   server = createServer(handleRequest);
   await new Promise((resolve, reject) => {
@@ -144,7 +167,9 @@ async function start(message) {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("unable to resolve the media port");
 
-  profileDirectory = mkdtempSync(join(tmpdir(), "pi-voice-browser-"));
+  const wsl = insideWSL();
+  if (wsl) profileDirectory = windowsTempDirectory("pi-voice-browser-");
+  else profileDirectory = mkdtempSync(join(tmpdir(), "pi-voice-browser-"));
   const selected = findBrowser(browserOverride);
   const url = "http://127.0.0.1:" + address.port + "/";
   const args = [
@@ -257,6 +282,9 @@ function handlePageEvent(event) {
     case "buffered":
       emit({ type: "media.buffered", ms: event.ms });
       break;
+    case "overflow":
+      emit({ type: "media.overflow" });
+      break;
     case "error":
       emit({ type: "media.error", message: String(event.message ?? "media error"), fatal: event.fatal !== false });
       if (event.fatal !== false) void stop();
@@ -326,23 +354,75 @@ async function stop() {
   process.exit(0);
 }
 
+function insideWSL() {
+  if (process.env.WSL_INTEROP || process.env.WSL_DISTRO_NAME) return true;
+  try {
+    return /microsoft/i.test(readFileSync("/proc/version", "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Chrome on Windows cannot write into a WSL path, so the profile directory is
+ * created under the Windows %TEMP% and addressed with its Windows form. WSL's
+ * localhost forwarding lets the Windows browser reach this process's server.
+ */
+function windowsTempDirectory(prefix) {
+  const probe = spawnSync("/mnt/c/Windows/System32/cmd.exe", ["/c", "echo %TEMP%"], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (probe.status !== 0) {
+    throw new Error("Could not resolve the Windows temporary directory for the browser profile.");
+  }
+  const windowsTemp = String(probe.stdout).replace(/[\r\n]+$/, "");
+  if (!windowsTemp) {
+    throw new Error("Could not resolve the Windows temporary directory for the browser profile.");
+  }
+  const unix = wslpath(windowsTemp);
+  return mkdtempSync(join(unix, prefix));
+}
+
+function wslpath(windowsPath) {
+  const probe = spawnSync("/usr/bin/wslpath", ["-u", windowsPath], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (probe.status !== 0 || !String(probe.stdout).trim()) {
+    throw new Error("Could not translate the Windows temporary directory to a WSL path.");
+  }
+  return String(probe.stdout).trim();
+}
+
 function findBrowser(override) {
   if (override) return { name: "configured Chromium browser", command: override };
-  const candidates =
-    process.platform === "darwin"
+  const candidates = insideWSL()
+    ? WSL_WINDOWS_BROWSERS
+    : process.platform === "darwin"
       ? MACOS_BROWSERS
       : process.platform === "win32"
         ? WINDOWS_BROWSERS
         : LINUX_BROWSERS;
   for (const candidate of candidates) {
-    const installedPath = candidate.paths.find((path) => typeof path === "string" && existsSync(path));
-    if (installedPath) return { name: candidate.name, command: installedPath };
-    const installedCommand = candidate.commands.find(commandExists);
-    if (installedCommand) return { name: candidate.name, command: installedCommand };
+    if (candidate.paths) {
+      const installedPath = candidate.paths.find((path) => typeof path === "string" && existsSync(path));
+      if (installedPath) return { name: candidate.name, command: installedPath };
+      const installedCommand = candidate.commands.find(commandExists);
+      if (installedCommand) return { name: candidate.name, command: installedCommand };
+    }
+    if (candidate.prefixes) {
+      for (const prefix of candidate.prefixes) {
+        for (const file of candidate.files) {
+          if (existsSync(prefix + file)) return { name: candidate.name, command: prefix + file };
+        }
+      }
+    }
   }
-  throw new Error(
-    "No supported Chromium browser was found; install Chrome or Chromium, or set PI_VOICE_BROWSER",
-  );
+  const hint = insideWSL()
+    ? "install Google Chrome on Windows, or set PI_VOICE_BROWSER to its chrome.exe path"
+    : "install Chrome or Chromium, or set PI_VOICE_BROWSER";
+  throw new Error("No supported Chromium browser was found; " + hint + ".");
 }
 
 function commandExists(command) {

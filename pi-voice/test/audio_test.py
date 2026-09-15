@@ -1,16 +1,20 @@
 import base64
+import importlib.util
 import json
 import os
 import select
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYTHON = os.path.join(ROOT, ".venv", "bin", "python")
 WORKER = os.path.join(ROOT, "audio", "worker.py")
+
+_spec = importlib.util.spec_from_file_location("worker", WORKER)
+worker = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(worker)
 
 SILENCE_FRAME = base64.b64encode(b"\x00" * 960).decode()
 
@@ -67,6 +71,13 @@ class WorkerTest(unittest.TestCase):
         self.assertIn("vad", levels[0])
         self.assertIn("db", levels[0])
 
+    def test_tuned_wake_constants_are_in_force(self):
+        self.assertEqual(worker.START_THRESHOLD, 0.5)
+        self.assertEqual(worker.START_WINDOWS, 8)  # 256 ms of continuous speech
+        self.assertEqual(worker.MIN_LEVEL_DB, -50.0)
+        self.assertEqual(worker.RELEASE_THRESHOLD, 0.35)
+        self.assertEqual(worker.RELEASE_WINDOWS, 10)
+
     @unittest.skipUnless(shutil.which("say") and shutil.which("afconvert"), "macOS voices required")
     def test_speech_frames_trigger_activity(self):
         import av
@@ -95,3 +106,7 @@ class WorkerTest(unittest.TestCase):
         speech = [event for event in events if event.get("type") == "activity"]
         self.assertTrue(any(event["speech"] for event in speech), "expected a speech start")
         self.assertTrue(any(not event["speech"] for event in speech), "expected a speech release")
+
+
+if __name__ == "__main__":
+    unittest.main()

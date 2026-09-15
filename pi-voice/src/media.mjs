@@ -7,7 +7,7 @@ import { VoiceError } from "./errors.mjs";
 const FRAME_BYTES = 960; // 20 ms of 24 kHz s16le mono, the VAD frame size
 
 /**
- * Media manager: owns the Chromium media host (microphone, speakers, WebRTC)
+ * Media manager: owns the browser media host (microphone, speakers, WebRTC)
  * and the local Silero VAD worker. The page feeds 24 kHz PCM to the worker so
  * speech detection sees exactly the audio the model hears, while the metered
  * session stays closed until speech actually happens. `inputWav` feeds a
@@ -18,6 +18,7 @@ export function openMedia({
   onEvent = () => {},
   onAudio = () => {},
   onLevel = () => {},
+  onNotice = () => {},
   onError = () => {},
   onTelemetry = () => {},
   inputWav,
@@ -47,13 +48,18 @@ export function openMedia({
     rejectReady = reject;
   });
   let workerReady = false;
-  let armedSeen = false;
+  let readyDone = false;
+
+  function resolveReadyOnce() {
+    if (readyDone) return;
+    readyDone = true;
+    resolveReady();
+  }
 
   const fail = (message) => {
     if (state.closed) return;
     const error = message instanceof VoiceError ? message : new VoiceError(String(message));
-    if (!armedSeen) {
-      armedSeen = true;
+    if (!readyDone) {
       rejectReady(error);
     } else onError(error);
   };
@@ -101,7 +107,7 @@ export function openMedia({
         if (event.state === "armed") {
           state.armed = true;
           state.connected = false;
-          if (workerReady) resolveReady();
+          if (workerReady) resolveReadyOnce();
         }
         break;
       case "media.offer": {
@@ -122,6 +128,8 @@ export function openMedia({
         state.pendingConnected.clear();
         break;
       case "media.pcm":
+        lastPcmAt = performance.now();
+        micNotice = false;
         feedWorker(event.audio);
         break;
       case "media.event":
@@ -140,6 +148,12 @@ export function openMedia({
         break;
       case "media.buffered":
         onTelemetry({ type: "buffered", ms: event.ms });
+        break;
+      case "media.overflow":
+        onNotice(
+          "Speech outlasted the 10 s connection buffer; the earliest audio was dropped. " +
+            "The connection was unusually slow.",
+        );
         break;
       case "media.error":
         if (event.fatal !== false) fail(event.message + stderrSuffix());
@@ -164,7 +178,7 @@ export function openMedia({
     }
     if (event.type === "ready") {
       workerReady = true;
-      if (state.armed) resolveReady();
+      if (state.armed) resolveReadyOnce();
     } else if (event.type === "activity") {
       onSpeech(Boolean(event.speech));
     } else if (event.type === "level") {
@@ -192,6 +206,21 @@ export function openMedia({
       );
     }
   }
+
+  // A live microphone that delivers nothing is indistinguishable from silence,
+  // so warn (without stopping voice) when no PCM arrives after media is ready.
+  let lastPcmAt = 0;
+  let micNotice = false;
+  const watchdog = setInterval(() => {
+    if (state.closed || !readyDone || !state.armed) return;
+    if (!micNotice && performance.now() - lastPcmAt > 5000) {
+      micNotice = true;
+      onNotice(
+        "No microphone audio is arriving. Check the microphone device and permission, then press /m again.",
+      );
+    }
+  }, 1000);
+  watchdog.unref?.();
 
   send({ type: "media.start", inputWav: inputWav || undefined, browser: browser || undefined });
 
@@ -243,6 +272,7 @@ export function openMedia({
     async close() {
       if (state.closed) return;
       state.closed = true;
+      clearInterval(watchdog);
       for (const entry of state.pendingConnected) {
         clearTimeout(entry.timer);
         entry.reject(new VoiceError("Voice media closed."));

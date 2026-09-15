@@ -1,3 +1,0 @@
-av>=16
-numpy>=2
-onnxruntime>=1.22

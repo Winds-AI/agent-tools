@@ -14,7 +14,9 @@ export const VOICE_PROMPT =
   "Reply briefly, carry the user's corrections and constraints, and after delegating wait " +
   "silently: the client returns Pi's answer and you speak it.";
 
-// The realtime context append endpoint is limited to 500 bytes per message.
+// The realtime context append endpoint is limited to 500 tokens per append;
+// contextChunks keeps each append far below that, so this cap only bounds how
+// much of a long Pi answer is spoken at all (the terminal holds the full text).
 function speakableExcerpt(text, maxChars = 2200) {
   if (text.length <= maxChars) return text;
   const cut = text.slice(0, maxChars);
@@ -23,6 +25,7 @@ function speakableExcerpt(text, maxChars = 2200) {
     const i = cut.lastIndexOf(ch);
     if (i + 1 > boundary) boundary = i + 1;
   }
+  // Keep at least 40% of the cap; otherwise a hard cut beats a stub.
   return (boundary >= maxChars * 0.4 ? cut.slice(0, boundary) : cut).trimEnd();
 }
 
@@ -67,6 +70,8 @@ export class VoiceSession {
     this.enabled = false;
     this.generation = 0;
     this.closed = false;
+    this.mediaReady = false;
+    this.catchingUp = false;
     this.delegations = new Map();
     this.announcePending = false;
     this.announcedResult = "";
@@ -87,6 +92,7 @@ export class VoiceSession {
       phase: this.phase,
       seconds: this.phase === "live" ? Math.floor((performance.now() - this.startedAt) / 1000) : 0,
       totalSeconds: this.totalSeconds + (this.phase === "live" ? this.sessionSeconds : 0),
+      catchingUp: this.phase === "live" && this.catchingUp,
       transcript: this.preview,
       level: this.level,
     });
@@ -106,9 +112,9 @@ export class VoiceSession {
       this.muted = false;
       this.media?.mute(false);
       if (this.phase === "muted") {
-        this.phase = "armed";
+        this.phase = this.mediaReady ? "armed" : "warming";
         this.publish();
-        if (this.pendingWake) this.wake();
+        if (this.phase === "armed" && this.pendingWake) this.wake();
       }
       this.notify("Microphone on; listening.", "info");
       return;
@@ -131,9 +137,10 @@ export class VoiceSession {
     const generation = ++this.generation;
     this.enabled = true;
     this.muted = false;
+    this.mediaReady = false;
     this.phase = "warming";
     this.publish();
-    // Capture starts about a second in (Chromium launch + microphone). Tell the
+    // Capture starts about a second in (browser launch + microphone). Tell the
     // user clearly instead of silently losing whatever they said meanwhile.
     const warmingNotice = setTimeout(() => {
       if (this.enabled && this.phase === "warming")
@@ -168,6 +175,17 @@ export class VoiceSession {
           if (!this.enabled || generation !== this.generation) return;
           this.handleEvent(event);
         },
+        onTelemetry: (event) => {
+          if (!this.enabled || generation !== this.generation) return;
+          if (event?.type === "catchup") {
+            this.catchingUp = false;
+            this.publish();
+          }
+        },
+        onNotice: (message) => {
+          if (!this.enabled || generation !== this.generation) return;
+          this.notify(message, "warning");
+        },
         onError: (error) => {
           if (generation === this.generation) void this.fail(error);
         },
@@ -179,9 +197,10 @@ export class VoiceSession {
         await media.close();
         return;
       }
-      this.phase = "armed";
+      this.mediaReady = true;
+      this.phase = this.muted ? "muted" : "armed";
       this.publish();
-      if (this.pendingWake) this.wake();
+      if (!this.muted && this.pendingWake) this.wake();
     } catch (error) {
       clearTimeout(warmingNotice);
       if (this.enabled && generation === this.generation) await this.fail(error);
@@ -199,6 +218,7 @@ export class VoiceSession {
       if (!this.announcePending) return;
     } else if (this.phase !== "armed") return;
     this.pendingWake = false;
+    this.catchingUp = true;
     this.phase = "connecting";
     this.publish();
     void this.connect(this.generation);
@@ -358,23 +378,14 @@ export class VoiceSession {
           ? this.lastDispatch
           : undefined;
       if (item) item.fulfilled = true;
-      if (item) {
-        for (const chunk of chunks) {
-          this.media.send({
-            type: "delegation.context.append",
-            delegation_item_id: item.id,
-            channel: "speakable",
-            content: [{ type: "input_text", text: chunk }],
-          });
-        }
-      } else {
-        for (const chunk of chunks) {
-          this.media.send({
-            type: "session.context.append",
-            channel: "speakable",
-            content: [{ type: "input_text", text: chunk }],
-          });
-        }
+      const type = item ? "delegation.context.append" : "session.context.append";
+      for (const chunk of chunks) {
+        this.media.send({
+          type,
+          channel: "speakable",
+          ...(item ? { delegation_item_id: item.id } : {}),
+          content: [{ type: "input_text", text: chunk }],
+        });
       }
       this.lastAssistantActivity = performance.now();
       this.lastTranscriptActivity = performance.now();
@@ -416,6 +427,7 @@ export class VoiceSession {
       this.flushDisplay();
       this.totalSeconds += Math.round(this.sessionSeconds);
       this.sessionSeconds = 0;
+      this.catchingUp = false;
       this.persist("usage", { seconds: this.totalSeconds, source: "subscription" });
     }).finally(() => {
       this.closingLive = undefined;
@@ -433,6 +445,8 @@ export class VoiceSession {
     ++this.generation;
     this.enabled = false;
     this.muted = false;
+    this.mediaReady = false;
+    this.catchingUp = false;
     this.pendingWake = false;
     this.announcePending = false;
     this.speaking = false;
