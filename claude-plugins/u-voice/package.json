@@ -1,0 +1,11 @@
+{
+  "name": "uvoice-claude-code",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs helper/tests/*.test.mjs",
+    "validate": "claude plugin validate ."
+  }
+}

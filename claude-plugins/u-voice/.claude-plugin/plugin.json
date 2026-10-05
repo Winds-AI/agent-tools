@@ -1,0 +1,6 @@
+{
+  "name": "uvoice",
+  "version": "0.3.0",
+  "description": "Continuous Codex voice conversation with the current Claude Code session, including steering while Claude works.",
+  "author": { "name": "Winds AI" }
+}

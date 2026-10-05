@@ -1,0 +1,6 @@
+{
+  "name": "uvoice-local",
+  "metadata": { "description": "Local development marketplace for U-voice" },
+  "owner": { "name": "Winds AI" },
+  "plugins": [{ "name": "uvoice", "source": "./", "description": "Voice mode for your existing Claude Code session" }]
+}

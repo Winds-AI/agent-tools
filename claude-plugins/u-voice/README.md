@@ -1,0 +1,105 @@
+<img src="assets/icon.svg" width="64" height="64" alt="">
+
+# U-voice
+
+Voice mode for the Claude Code session already running in your terminal. GPT-Live handles the spoken conversation and delegates project work to Claude. You can keep talking while Claude works; new directions reach its next model step without cancelling the running tool.
+
+## Start
+
+Restart Claude Code after installation, then run:
+
+```text
+/v
+```
+
+Voice connects automatically. Wait for **Voice: Listening** in the terminal, then speak. For example: “Read the README and explain how this project works.” A dedicated hidden browser handles audio; no browser tab or panel needs your attention.
+
+- `/v` toggles voice on/off, including cancelling a connection in progress. Claude keeps working when voice stops.
+- `/m` toggles microphone mute. Replies remain audible and Claude keeps working.
+- `/uvoice status` shows its state.
+- `/uvoice start` and `/uvoice stop` explicitly start or stop voice.
+
+These controls run immediately even while Claude is working and do not invoke an AI model. Connection and microphone errors appear in the terminal. `/uvoice open` and `/uvoice url` provide optional browser diagnostics; normal use needs neither.
+
+Live captions appear above the terminal prompt; finished speech is logged once as **You:** or **Voice:**. You can start voice in a normal text session, type while voice is running, and turn voice off while Claude keeps working. Voice-requested results are spoken; typed replies stay silent by default. New spoken or typed input suppresses an older result that has not yet been sent for speech.
+
+Start Claude yourself in your usual bypass mode. The plugin attaches to that session and has no approval or permission-mode management.
+
+## Requirements and installation
+
+Tested against Claude Code **2.1.289** and Node **24**. Node 22 or newer is required. The plugin uses Claude's native JavaScript mods, including `session.append`; an older Claude release may lack the required API.
+
+Both Claude Code and Codex must already be signed in. The helper reads `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and uses the installed Codex client version. OAuth credentials stay in the helper; the browser receives the WebRTC session description and a temporary localhost bridge token.
+
+Clone the repository and enter the plugin directory:
+
+```sh
+git clone https://github.com/Winds-AI/agent-tools.git
+cd agent-tools/claude-plugins/u-voice
+claude plugin marketplace add "$PWD"
+claude plugin install uvoice@uvoice-local --scope user
+```
+
+For development without installation:
+
+```sh
+claude --plugin-dir "$PWD"
+```
+
+On WSL, the helper runs in Linux and launches an isolated, invisible Windows Chrome process (Edge is the fallback). It uses your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone. The browser has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. Native Windows also uses this audio host. Linux requires Chrome/Chromium and `setsid`.
+
+The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
+
+Optional environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `UVOICE_CODEX_AUTH_FILE` | Override the Codex auth-file path. |
+| `UVOICE_NODE` | Override the Node executable used by the mod. |
+| `UVOICE_CODEX_VERSION` | Explicit Codex client version if `codex` is unavailable on PATH. |
+| `UVOICE_BROWSER` | Override the dedicated Chrome/Edge executable. |
+
+## How steering works
+
+When Claude is idle, the mod submits the task through `prompt.submit` as user input. During a running turn, it appends the task through `session.append`. Claude sees that note before its next model request, after the running tools finish. A request that arrives during the final answer gets one short follow-up prompt if no further model step can consume it. Internal request IDs and repeated delegation instructions stay out of the model prompt.
+
+Mode changes add instructions once through the prompt or tool-result hook's context, with a turn-entry hook for idle submissions. Earlier messages and mode instructions stay in history; toggling does not rewrite the top-level system prompt. Claude Code 2.1.289 with Sonnet serializes those instructions as appended system context. The plugin tracks transcript fragments until Claude accepts them, so spoken constraints are delivered once with a task or before the next typed request. A 1.2-second debounce collects trailing speech before delegation.
+
+The voice model receives recent user/assistant text from this thread when connecting, then typed requests, visible progress, tool names/status and final answers. Private thinking, raw tool arguments and raw tool output are excluded. Speech routing tracks the request that owns a reply and ignores obsolete queued speech. Audio already sent to the service may still finish playing.
+
+The voice transport uses Codex's **internal subscription endpoint** and model `gpt-live-1-codex`, adapted from the existing [Pi voice integration](https://github.com/Winds-AI/agent-tools/tree/main/pi-voice) and checked against Codex's source. This is not the public OpenAI Live API; future Codex protocol changes can require an adapter update. If authentication expires, sign in again with `codex login`, then reconnect.
+
+## Checks
+
+```sh
+npm test
+claude plugin validate .
+claude plugin test .
+node scripts/native-smoke.mjs
+```
+
+The native smoke check uses a local model/audio fixture with no paid calls. It verifies history preservation, native mode context, idle/busy delegation, and text/voice reply ownership.
+
+The optional live steering check uses your Claude subscription with Haiku, low effort, and a small budget limit:
+
+```sh
+node scripts/claude-smoke.mjs
+```
+
+The terminal check uses Sonnet at low effort with a $0.20 reported-cost cap. Supply synthetic speech asking to read `note.txt` and report its color. It starts the hidden audio host with `/v`, checks both terminal caption directions, verifies a silent typed reply, and tests `/m` and `/v` teardown:
+
+```sh
+UVOICE_SMOKE_WAV=/absolute/path/synthetic-speech.wav node scripts/terminal-smoke.mjs
+```
+
+The voice check requires a **synthesized speech WAV**, never a real microphone. Its utterance should ask Claude to read `note.txt` and report its color. It creates that test file under `.scratch/`, uses a separate browser session, and closes the voice connection after the check:
+
+```sh
+UVOICE_SMOKE_WAV=/absolute/path/synthetic-speech.wav \
+UVOICE_SMOKE_CHROME=/absolute/path/chrome \
+node scripts/voice-smoke.mjs
+```
+
+Live checks consume subscription quota. Sanitized evidence is written under `.scratch/`; credentials and raw provider traces are not saved.
+
+Created in [T3 Code](https://t3.codes).

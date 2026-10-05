@@ -1,6 +1,16 @@
 # Agent Tools
 
-Standalone tools and Pi resources maintained by Winds AI.
+Standalone tools, Claude Code plugins, and Pi resources maintained by Winds AI.
+
+## Claude Code plugins
+
+Claude Code plugins are grouped under [`claude-plugins`](claude-plugins). Each plugin has its own manifests, runtime, and tests.
+
+| Plugin | Path | Purpose |
+| --- | --- | --- |
+| U-voice | [`claude-plugins/u-voice`](claude-plugins/u-voice) | Voice mode in the existing Claude Code thread, with terminal captions and `/v` and `/m` controls |
+
+See the [U-voice README](claude-plugins/u-voice/README.md) for requirements and installation.
 
 ## Pi extensions
 
