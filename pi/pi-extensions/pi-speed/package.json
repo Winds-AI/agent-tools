@@ -1,7 +1,10 @@
 {
   "name": "@winds-ai/pi-speed",
-  "version": "0.3.2",
-  "description": "Rolling-window generation speed (tok/s) and persisted per-turn 'worked for' timer for Pi",
+  "version": "0.3.3",
+  "description": "Rolling-window effective output throughput (tok/s) and persisted per-turn 'worked for' timer for Pi",
+  "scripts": {
+    "test": "node --test test/extension.test.mjs"
+  },
   "type": "module",
   "license": "MIT",
   "keywords": [

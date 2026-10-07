@@ -1,10 +1,11 @@
 /**
- * pi-speed — generation speed and per-turn elapsed time for pi.
+ * pi-speed — effective output throughput and per-turn elapsed time for pi.
  *
- * Job 1 — speed (in-memory, live):
- *   Rolling-window tokens/sec across the last WINDOW_SIZE assistant
- *   responses, shown in the footer. The window keeps computation O(1) no
- *   matter how long the session grows.
+ * Job 1 — speed (in-memory, updated after each response):
+ *   Total reported output tokens / total model-call time across the last
+ *   WINDOW_SIZE measured assistant responses, shown in the footer. Includes
+ *   hidden reasoning and request latency, excludes tool execution. The
+ *   fixed-size window keeps computation O(1) as the session grows.
  *
  * Job 2 — timer (live beside the working indicator, final value persisted):
  *   Every user message starts a fresh timer that ticks inside the working
@@ -38,10 +39,8 @@ export default function (pi: ExtensionAPI) {
   const window: { tokens: number; ms: number }[] = [];
 
   // ---- per-turn state (one timer per user message) ----
-  let runStart: number | null = null; // this prompt's start time
-  let msgStart: number | null = null; // current assistant message start
-  let streamStart: number | null = null; // first delta of the current message
-  let msgTokens = 0; // estimated tokens of the current message
+  let runStart: number | null = null; // monotonic start time of this prompt
+  let requestStart: number | null = null; // monotonic start of the model call
   let lastSpeed: number | null = null; // most recent window average (tok/s)
   let ticker: ReturnType<typeof setInterval> | null = null;
 
@@ -53,7 +52,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   function elapsed(): number {
-    return runStart === null ? 0 : (Date.now() - runStart) / 1000;
+    return runStart === null ? 0 : (performance.now() - runStart) / 1000;
   }
 
   function renderStatus(ctx: any) {
@@ -93,66 +92,55 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     window.length = 0;
     runStart = null;
-    msgStart = null;
-    streamStart = null;
-    msgTokens = 0;
+    requestStart = null;
     lastSpeed = null;
     stopTicker(undefined);
     if (ctx.hasUI) renderStatus(ctx);
   });
 
   pi.on("session_shutdown", async () => {
+    requestStart = null;
     stopTicker(undefined);
   });
 
   // Every user message starts a fresh timer.
   pi.on("before_agent_start", async (_event, ctx) => {
-    runStart = Date.now();
+    runStart = performance.now();
+    requestStart = null;
     if (ctx.hasUI) {
       startTicker(ctx);
     }
   });
 
-  pi.on("message_start", async (event) => {
-    if (event.message.role !== "assistant") return;
-    msgStart = Date.now();
-    streamStart = null;
-    msgTokens = 0;
-  });
-
-  pi.on("message_update", async (event) => {
-    if (event.message.role !== "assistant") return;
-    const e = event.assistantMessageEvent;
-    if (e.type !== "text_delta" && e.type !== "thinking_delta" && e.type !== "toolcall_delta") return;
-
-    streamStart ??= Date.now();
-    msgTokens += Math.max(0, e.delta.length / 4);
+  // message_start can arrive only after HTTP headers, and the first delta
+  // can arrive after hidden reasoning or a buffered tool-call batch. Start
+  // before the request instead, so all reported output has matching time.
+  pi.on("before_provider_request", async () => {
+    requestStart = performance.now();
   });
 
   pi.on("message_end", async (event, ctx) => {
     if (event.message.role !== "assistant") return;
 
-    const official = event.message.usage?.output ?? 0;
-    const tokens = official > 0 ? official : Math.round(msgTokens);
-    const timingStart = streamStart ?? msgStart;
-    if (timingStart && tokens > 0) {
-      window.push({ tokens, ms: Math.max(0, Date.now() - timingStart) });
+    const timingStart = requestStart;
+    requestStart = null; // never reuse timing after a failed/aborted response
+    const tokens = event.message.usage?.output ?? 0; // already includes reasoning
+    const ms = timingStart === null ? 0 : performance.now() - timingStart;
+    if (Number.isFinite(tokens) && tokens > 0 && Number.isFinite(ms) && ms > 0) {
+      window.push({ tokens, ms });
       if (window.length > WINDOW_SIZE) window.shift();
       lastSpeed = windowSpeed();
     }
-
-    msgStart = null;
-    streamStart = null;
-    msgTokens = 0;
 
     if (ctx.hasUI) renderStatus(ctx);
   });
 
   // The run is truly over: no retries, no compaction, no queued follow-ups.
   pi.on("agent_settled", async (_event, ctx) => {
+    requestStart = null;
     if (runStart === null) return;
 
-    const seconds = (Date.now() - runStart) / 1000;
+    const seconds = elapsed();
     runStart = null;
     stopTicker(ctx.hasUI ? ctx : undefined);
 
