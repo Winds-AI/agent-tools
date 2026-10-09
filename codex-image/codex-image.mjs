@@ -1,24 +1,48 @@
 #!/usr/bin/env node
 
-// codex-image — generate an image with your existing Codex login.
-// One prompt in, one temporary PNG path out.
+// codex-image — generate or edit an image with your existing Codex login.
+// Text → image, image → image, or image + text → image. One PNG path out.
 // Auth comes from ~/.codex/auth.json ($CODEX_HOME is honored).
 
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
-const IMAGE_URL = "https://chatgpt.com/backend-api/codex/images/generations";
+const API_BASE = "https://chatgpt.com/backend-api/codex/images";
 const MODEL = "gpt-image-2";
 const QUALITIES = new Set(["auto", "low", "medium", "high"]);
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+// The edits endpoint requires a non-empty prompt; used when only images are given.
+// The model returns alpha only when the prompt asks for it plainly, so it is added when a reference has alpha.
+const VARIATION_PROMPT = "Create a new variation of the provided image. Keep its subject, composition, colors and art style.";
+const TRANSPARENT_SUFFIX = " Transparent background.";
 
-function usage() {
-  process.stderr.write(
-    `Usage: node codex-image.mjs <prompt> [--quality <auto|low|medium|high>]\n`,
-  );
-}
+const HELP = `Usage: node codex-image.mjs [prompt] [--image <path>]... [--quality <q>] [--out <path>]
+
+Modes (picked from the arguments):
+  text -> image          node codex-image.mjs "a red fox in snow"
+  image + text -> image  node codex-image.mjs "same character, now waving" --image ref.png
+  image -> image         node codex-image.mjs --image ref.png      (makes a variation)
+  several references     node codex-image.mjs "the cat from image 1 wearing the hat from image 2" --image cat.png --image hat.jpg
+
+Options:
+  --image <path>   Reference image (PNG, JPEG or WebP). Repeat for several; refer to them in the
+                   prompt as "image 1", "image 2" in the order given.
+  --quality <q>    auto | low | medium | high (default: auto). low is fastest.
+  --out <path>     Where to write the PNG (parent folders are created; existing file is replaced).
+                   Default: a new temp file.
+  -h, --help       Show this help.
+
+Output: on success, prints only the absolute path of the PNG to stdout and exits 0.
+Errors: one "Error: ..." line on stderr; exit 2 for bad arguments, 1 for everything else.
+
+Notes: one image per call, usually 15-60 s. Size and aspect ratio are chosen by the model; describe
+the shape you want in the prompt ("wide 16:9 landscape"). Ask for "transparent background" in the
+prompt to get a PNG with alpha (added automatically for image -> image when a reference has
+alpha). Uses your Codex login and quota (run \`codex login\` first).`;
+
+class UsageError extends Error {}
 
 /** Resolve the Codex home dir like Codex itself does (CODEX_HOME, else ~/.codex). */
 function codexHome() {
@@ -43,43 +67,104 @@ async function getAuth() {
   return { token, accountId };
 }
 
-/** Parse one prompt plus an optional quality setting. */
+/** Parse an optional prompt, any number of --image paths, --quality and --out. */
 function parseArgs(argv) {
-  const args = { prompt: undefined, quality: "auto" };
+  const args = { prompt: undefined, images: [], quality: "auto", out: undefined };
+  const value = (name, i) => {
+    const v = argv[i];
+    if (v === undefined || v.startsWith("--")) throw new UsageError(`${name} requires a value.`);
+    return v;
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--quality") {
-      const value = argv[++i];
-      if (!value) throw new Error("--quality requires a value.");
-      args.quality = value;
-    } else if (arg.startsWith("--quality=")) {
-      args.quality = arg.slice("--quality=".length);
-    } else if (arg === "--help" || arg === "-h") {
-      usage();
+    const eq = arg.indexOf("=");
+    const [flag, inline] = arg.startsWith("--") && eq > 0 ? [arg.slice(0, eq), arg.slice(eq + 1)] : [arg, undefined];
+    if (flag === "-h" || flag === "--help") {
+      process.stdout.write(`${HELP}\n`);
       process.exit(0);
-    } else if (arg.startsWith("--")) {
-      throw new Error(`Unknown option: ${arg}`);
+    } else if (flag === "--image") {
+      args.images.push(inline ?? value("--image", ++i));
+    } else if (flag === "--quality") {
+      args.quality = inline ?? value("--quality", ++i);
+    } else if (flag === "--out") {
+      args.out = inline ?? value("--out", ++i);
+    } else if (arg.startsWith("-") && arg !== "-") {
+      throw new UsageError(`Unknown option: ${arg}. Run with --help for usage.`);
     } else if (args.prompt === undefined) {
       args.prompt = arg;
     } else {
-      throw new Error(`Unexpected extra argument: ${arg}`);
+      throw new UsageError(`Unexpected extra argument: ${arg}. Quote the prompt so it is a single argument.`);
     }
   }
 
-  if (!args.prompt || args.prompt.trim() === "") {
-    usage();
-    throw new Error("No prompt given.");
+  if (args.prompt !== undefined && args.prompt.trim() === "") args.prompt = undefined;
+  if (args.prompt === undefined && args.images.length === 0) {
+    throw new UsageError("Give a prompt, at least one --image, or both. Run with --help for usage.");
   }
   if (!QUALITIES.has(args.quality)) {
-    throw new Error(`Invalid quality: ${args.quality}. Use auto, low, medium, or high.`);
+    throw new UsageError(`Invalid quality: ${args.quality}. Use auto, low, medium, or high.`);
   }
   return args;
 }
 
-/** Generate one image and return its PNG bytes. */
-async function generateImage(prompt, quality) {
+/** Detect the image type from its first bytes. */
+function imageMime(bytes) {
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return undefined;
+}
+
+/** Whether a PNG or WebP declares an alpha channel (header check only). */
+function hasAlpha(bytes, mime) {
+  if (mime === "image/png") {
+    const trns = bytes.indexOf("tRNS");
+    return [4, 6].includes(bytes[25]) || (trns !== -1 && trns < bytes.indexOf("IDAT"));
+  }
+  if (mime === "image/webp") {
+    const chunk = bytes.subarray(12, 16).toString("latin1");
+    if (chunk === "VP8X") return (bytes[20] & 0x10) !== 0;
+    if (chunk === "VP8L") return ((bytes[24] >> 4) & 1) === 1;
+  }
+  return false;
+}
+
+/** Load reference images as data URLs, failing early with a clear message. */
+async function loadImages(paths) {
+  const refs = [];
+  for (const path of paths) {
+    let info;
+    try {
+      info = await stat(path);
+    } catch {
+      throw new UsageError(`Image not found: ${path}`);
+    }
+    if (!info.isFile()) throw new UsageError(`Not a file: ${path}`);
+    if (info.size > MAX_IMAGE_BYTES) throw new UsageError(`Image is larger than 32 MB: ${path}`);
+    const bytes = await readFile(path);
+    const mime = imageMime(bytes);
+    if (!mime) throw new UsageError(`Unsupported image type: ${path}. Use PNG, JPEG or WebP.`);
+    refs.push({ image_url: `data:${mime};base64,${bytes.toString("base64")}`, alpha: hasAlpha(bytes, mime) });
+  }
+  return refs;
+}
+
+/** Generate (no references) or edit (with references) one image and return its PNG bytes. */
+async function requestImage({ prompt, images, quality }) {
   const { token, accountId } = await getAuth();
-  const response = await fetch(IMAGE_URL, {
+  const editing = images.length > 0;
+  const variationPrompt = VARIATION_PROMPT + (images.some((ref) => ref.alpha) ? TRANSPARENT_SUFFIX : "");
+  const body = {
+    prompt: prompt ?? variationPrompt,
+    background: "auto",
+    model: MODEL,
+    n: 1,
+    quality,
+    size: "auto",
+  };
+  if (editing) body.images = images.map(({ image_url }) => ({ image_url }));
+
+  const response = await fetch(`${API_BASE}/${editing ? "edits" : "generations"}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -88,14 +173,7 @@ async function generateImage(prompt, quality) {
       originator: "codex_cli_rs",
       "x-codex-image-turn-id": randomUUID(),
     },
-    body: JSON.stringify({
-      prompt,
-      background: "auto",
-      model: MODEL,
-      n: 1,
-      quality,
-      size: "auto",
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(5 * 60_000),
   });
 
@@ -107,7 +185,11 @@ async function generateImage(prompt, quality) {
     if (response.status === 429) {
       throw new Error("Image generation limit reached. Try again later.");
     }
-    throw new Error(`API error (${response.status}): ${errorText.slice(0, 500)}`);
+    let message = errorText.slice(0, 500);
+    try {
+      message = JSON.parse(errorText).error?.message ?? message;
+    } catch {}
+    throw new Error(`API error (${response.status}): ${message}`);
   }
 
   let payload;
@@ -126,8 +208,7 @@ async function generateImage(prompt, quality) {
   }
 
   const image = Buffer.from(base64, "base64");
-  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  if (image.length === 0 || image.length > MAX_IMAGE_BYTES || !image.subarray(0, 8).equals(pngSignature)) {
+  if (image.length === 0 || image.length > MAX_IMAGE_BYTES || imageMime(image) !== "image/png") {
     throw new Error("Image API returned invalid PNG data.");
   }
   return image;
@@ -135,13 +216,15 @@ async function generateImage(prompt, quality) {
 
 main().catch((err) => {
   process.stderr.write(`Error: ${err.message}\n`);
-  process.exit(1);
+  process.exit(err instanceof UsageError ? 2 : 1);
 });
 
 async function main() {
-  const { prompt, quality } = parseArgs(process.argv.slice(2));
-  const image = await generateImage(prompt, quality);
-  const outputPath = join(tmpdir(), `codex-image-${randomUUID()}.png`);
+  const args = parseArgs(process.argv.slice(2));
+  const images = await loadImages(args.images);
+  const image = await requestImage({ prompt: args.prompt, images, quality: args.quality });
+  const outputPath = args.out ? resolve(args.out) : join(tmpdir(), `codex-image-${randomUUID()}.png`);
+  if (args.out) await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, image, { mode: 0o600 });
   process.stdout.write(`${outputPath}\n`);
 }
