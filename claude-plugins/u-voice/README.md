@@ -49,7 +49,7 @@ claude --plugin-dir "$PWD"
 
 On WSL, the helper runs in Linux and launches the Windows Electron audio host so it can use your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone, and WSL localhost forwarding must be available. Native macOS, Windows and Linux use the matching Electron runtime for their platform. Linux requires a normal desktop display and working user audio service; bare SSH/headless servers are not a supported audio target.
 
-The Electron runtime is roughly 120–180 MB compressed depending on platform and is cached after the first `/v`. It has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
+The Electron runtime is roughly 120–180 MB compressed depending on platform and is cached after the first `/v`. While voice runs it is two processes (about 70 MB on macOS): GPU, audio and network services stay in the main process, and hardware acceleration is off. It has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
 
 Optional environment variables:
 

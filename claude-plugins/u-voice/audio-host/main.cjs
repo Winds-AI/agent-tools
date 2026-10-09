@@ -4,6 +4,19 @@ const { app, BrowserWindow, session, systemPreferences } = require('electron');
 const { join } = require('node:path');
 const { parseConfiguration, sameOrigin, allowMedia, windowOptions } = require('./policy.cjs');
 
+// Chromium reads these before 'ready', so they are set at load, not after the
+// stdin configuration arrives. One hidden page needs no GPU, and keeping the
+// GPU, audio and network services in the main process cuts 5 processes to 2
+// and memory by about 30% (measured on macOS: 100 MB to 71 MB footprint, CPU
+// unchanged, echo cancellation still on). A crash in any of them now ends the
+// host, which the plugin already reports as voice stopping.
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('in-process-gpu');
+app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess');
+app.commandLine.appendSwitch('enable-features', 'NetworkServiceInProcess2');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+
 let window;
 let closing = false;
 let configured = false;
@@ -43,8 +56,6 @@ async function start(raw) {
   if (process.platform === 'darwin') app.setActivationPolicy('accessory');
   app.setPath('userData', config.profilePath);
   app.setPath('sessionData', join(config.profilePath, 'session'));
-  app.commandLine.appendSwitch('disable-background-timer-throttling');
-  app.commandLine.appendSwitch('disable-renderer-backgrounding');
   if (config.syntheticWav) {
     app.commandLine.appendSwitch('use-fake-device-for-media-stream');
     app.commandLine.appendSwitch('use-file-for-fake-audio-capture', config.syntheticWav + '%noloop');
