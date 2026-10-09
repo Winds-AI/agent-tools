@@ -16,29 +16,15 @@ const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 // The edits endpoint accepts references up to 50 MiB; larger ones come back as a misleading moderation_block.
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 
-const HELP = `Usage: node codex-image.mjs <prompt> [--image <path>]... [--quality <q>] [--out <path>]
+const HELP = `Usage: node codex-image.mjs <prompt> [--image <path>]... [--quality auto|low|medium|high] [--out <path>]
 
-Modes (picked from the arguments):
-  text -> image          node codex-image.mjs "a red fox in snow"
-  image + text -> image  node codex-image.mjs "same character, now waving" --image ref.png
-  several references     node codex-image.mjs "the cat from image 1 wearing the hat from image 2" --image cat.png --image hat.jpg
+  node codex-image.mjs "a red fox in snow"
+  node codex-image.mjs "same character, now waving" --image ref.png
+  node codex-image.mjs "the cat from image 1 in the hat from image 2" --image cat.png --image hat.jpg
 
-A prompt is always required, also with --image.
-
-Options:
-  --image <path>   Reference image (PNG, JPEG or WebP, up to 50 MB). Repeat for several; refer to them in the
-                   prompt as "image 1", "image 2" in the order given.
-  --quality <q>    auto | low | medium | high (default: auto).
-  --out <path>     Where to write the PNG (parent folders are created; existing file is replaced).
-                   Default: a new temp file.
-  -h, --help       Show this help.
-
-Output: on success, prints only the absolute path of the PNG to stdout and exits 0.
-Errors: one "Error: ..." line on stderr; exit 2 for bad arguments, 1 for everything else.
-
-Notes: one image per call. Size and aspect ratio are chosen by the model; describe
-the shape you want in the prompt ("wide 16:9 landscape"). Ask for "transparent background" in the
-prompt to get a PNG with alpha. Uses your Codex login and quota (run \`codex login\` first).`;
+--image: PNG, JPEG or WebP up to 50 MB, repeatable. --out: default is a temp file.
+Prints the PNG's absolute path. Errors: one line on stderr, exit 2 for bad arguments, 1 otherwise.
+Ask for size, aspect ratio and "transparent background" in the prompt. Needs \`codex login\`.`;
 
 class UsageError extends Error {}
 
