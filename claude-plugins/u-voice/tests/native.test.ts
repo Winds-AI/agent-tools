@@ -35,7 +35,7 @@ test('live captions draw using the native terminal element table', async ($, on)
       { type: 'transcript', role: 'U', utteranceId: 'native-u', text: 'Keep the API', final: true },
     ]) yield { stream: 'stdout', text: JSON.stringify(event) + '\n' }
     await clock.sleep(500)
-    return { code: 0, signal: null }
+    return { value: { code: 0, signal: null } }
   })
   await $.session.start({ cwd: '/fixture', surface: 'terminal', isInteractive: true })
   const starting = $.command.run({ command: 'v', args: '' })
@@ -77,7 +77,7 @@ test('native captions disappear on acceptance and late finals do not bring them 
     await clock.sleep(500)
     yield { stream: 'stdout', text: JSON.stringify({ type: 'transcript', role: 'U', utteranceId: 'native-u', text: 'Fix parser', final: true }) + '\n' }
     await clock.sleep(500)
-    return { code: 0, signal: null }
+    return { value: { code: 0, signal: null } }
   })
   await $.session.start({ cwd: '/fixture', surface: 'terminal', isInteractive: true })
   const starting = $.command.run({ command: 'v', args: '' })
