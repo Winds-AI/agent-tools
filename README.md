@@ -46,5 +46,5 @@ The other top-level directories contain standalone agent utilities and are not P
 | Codex Eyes | `codex-eyes` | Image analysis via Codex (GPT-5.6 Luna) |
 | Codex Image | `codex-image` | Image generation and editing (text, or images + text, to image) via Codex |
 | Gemini Eyes | `gemini-eyes` | Image analysis via Antigravity (Gemini 3.8 Flash) |
-| Gemini Video | `gemini-video` | Directed video analysis via the Gemini API |
+| Gemini Video | `gemini-video` | Directed video analysis via OpenRouter (Gemini 3.8 Flash, agentic) |
 | Pi Session MD | `pi-session-md` | Convert pi session JSONL files to markdown |

@@ -1,58 +1,39 @@
 # Gemini Video
 
-Minimal video understanding for pi or any agent/harness. Give it a video and
-a question; get a text answer with relevant timestamps.
-
-Use it to understand screen recordings, find specific events, explain actions,
-or extract steps from a tutorial. Uses **Gemini 3.8 Flash** with agentic video
-processing, which explores the video based on the question. The model is fixed;
-there are no model overrides or fallbacks.
+Video understanding for any agent/harness: a local video and a question in, a
+text answer with timestamps out. Uses Gemini 3.8 Flash through OpenRouter with
+agentic video processing, where the model navigates the timeline and loads only
+the frames, audio and transcript the question needs.
 
 ## Usage
 
-Requires Node.js 22+ and a [Gemini API key](https://aistudio.google.com/api-keys).
-No packages to install.
+Requires Node.js 22+, an OpenRouter API key, and `ffmpeg` for videos that need
+converting or shrinking.
 
 ```bash
 node gemini-video.mjs /path/to/recording.mp4 "What action caused the error?"
-node gemini-video.mjs /path/to/demo.webm "What changes after clicking Save?"
-node gemini-video.mjs "https://www.youtube.com/watch?v=VIDEO_ID" "Extract the setup steps."
-node gemini-video.mjs /path/to/lecture.mp4 "List the main arguments." > notes.txt
-node gemini-video.mjs -h
+node gemini-video.mjs /path/to/demo.mov "List each scene change with its timestamp."
 ```
 
-Exactly one local video or public YouTube URL, followed by one required prompt.
-Pass the actual question as the prompt; it controls scope, detail, and format.
-Apart from `-h` / `--help`, there are no flags.
+Exactly one local video and one question; no flags. The answer goes to stdout;
+errors go to stderr with exit code 1.
 
-Output: the complete answer is printed to stdout as one block. Errors go to
-stderr with exit code 1. Each invocation is independent.
+Set `OPENROUTER_API_KEY`, or save the key in
+`~/.config/gemini-video/openrouter-api-key` (mode `600`). The environment
+variable wins.
 
-## Authentication
+## Behavior
 
-Set `GEMINI_API_KEY`, or save the key in `~/.config/gemini-video/api-key` with
-permissions `600`. The environment variable takes precedence. Keep the key
-outside the repository.
-
-A free-tier project uses its available free quota; a billed project follows
-its API pricing. Check your project's limits in
-[AI Studio](https://aistudio.google.com/rate-limit).
-
-## How it works
-
-Uploads local videos through Gemini Files, waits until ready, and sends the
-video and prompt to the Interactions API with `processing: "agentic"` and
-`store: false`. The only system instruction is:
-
-> Include timestamps for the moments supporting your answer.
-
-The tool deletes its upload after success or failure. Interrupted processes
-or failed cleanup can leave files until Gemini's automatic 48-hour expiry.
-Requests time out after ten minutes. There are no automatic retries.
-
-Local formats: MP4, MOV, WebM, AVI, MPEG, M4V, WMV; maximum 2 GB per file.
-YouTube videos must be public. Agentic processing is not always faster on
-short clips. Google's API data-use policies still apply.
+- MP4, M4V, MOV, WebM and MPEG are sent as-is; AVI, WMV, MKV, FLV and 3GP are
+  converted to MP4.
+- OpenRouter's Gemini endpoint rejects requests over 20 MB, so videos over
+  14 MB are re-encoded to fit (5 fps, up to 720p, mono audio). If a video
+  cannot be made small enough, the error asks you to trim or split it.
+- Agentic is only available through OpenRouter's Responses API, which this
+  tool uses. Broad questions over a whole video can end without an answer; the
+  tool then retries once with static processing (one pass at 1 frame per
+  second) and says so on stderr. Rate limits and server errors are retried, up
+  to 3 attempts in total.
 
 ## License
 
