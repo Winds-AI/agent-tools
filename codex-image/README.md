@@ -41,7 +41,9 @@ node codex-image.mjs -h
 | `--out <path>` | Output PNG path; parent folders are created and an existing file is replaced. Default: a new temp file |
 | `-h`, `--help` | Print usage and exit |
 
-`--flag value` and `--flag=value` both work. Anything else is rejected.
+`--flag value` and `--flag=value` both work. Any other argument is the prompt,
+even if it starts with `-` or `--`; only one is allowed. Multi-line prompts work
+as a single quoted argument, e.g. `"$(cat prompt.txt)"`.
 `CODEX_HOME` is honored for the auth file location.
 
 Output: only the absolute path of the PNG is printed to stdout, e.g.

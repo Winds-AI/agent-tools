@@ -63,7 +63,7 @@ async function getAuth() {
   return { token, accountId };
 }
 
-/** Parse one prompt, any number of --image paths, --quality and --out. */
+/** Parse one prompt, any number of --image paths, --quality and --out. Anything that is not one of these flags is the prompt. */
 function parseArgs(argv) {
   const args = { prompt: undefined, images: [], quality: "auto", out: undefined };
   const value = (name, i) => {
@@ -84,8 +84,6 @@ function parseArgs(argv) {
       args.quality = inline ?? value("--quality", ++i);
     } else if (flag === "--out") {
       args.out = inline ?? value("--out", ++i);
-    } else if (arg.startsWith("-") && arg !== "-") {
-      throw new UsageError(`Unknown option: ${arg}. Run with --help for usage.`);
     } else if (args.prompt === undefined) {
       args.prompt = arg;
     } else {
