@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // codex-image — generate or edit an image with your existing Codex login.
-// Text → image, image → image, or image + text → image. One PNG path out.
+// Text → image, or image + text → image. One PNG path out.
 // Auth comes from ~/.codex/auth.json ($CODEX_HOME is honored).
 
 import { randomUUID } from "node:crypto";
@@ -13,18 +13,15 @@ const API_BASE = "https://chatgpt.com/backend-api/codex/images";
 const MODEL = "gpt-image-2";
 const QUALITIES = new Set(["auto", "low", "medium", "high"]);
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
-// The edits endpoint requires a non-empty prompt; used when only images are given.
-// The model returns alpha only when the prompt asks for it plainly, so it is added when a reference has alpha.
-const VARIATION_PROMPT = "Create a new variation of the provided image. Keep its subject, composition, colors and art style.";
-const TRANSPARENT_SUFFIX = " Transparent background.";
 
-const HELP = `Usage: node codex-image.mjs [prompt] [--image <path>]... [--quality <q>] [--out <path>]
+const HELP = `Usage: node codex-image.mjs <prompt> [--image <path>]... [--quality <q>] [--out <path>]
 
 Modes (picked from the arguments):
   text -> image          node codex-image.mjs "a red fox in snow"
   image + text -> image  node codex-image.mjs "same character, now waving" --image ref.png
-  image -> image         node codex-image.mjs --image ref.png      (makes a variation)
   several references     node codex-image.mjs "the cat from image 1 wearing the hat from image 2" --image cat.png --image hat.jpg
+
+A prompt is always required, also with --image.
 
 Options:
   --image <path>   Reference image (PNG, JPEG or WebP). Repeat for several; refer to them in the
@@ -39,8 +36,7 @@ Errors: one "Error: ..." line on stderr; exit 2 for bad arguments, 1 for everyth
 
 Notes: one image per call, usually 15-60 s. Size and aspect ratio are chosen by the model; describe
 the shape you want in the prompt ("wide 16:9 landscape"). Ask for "transparent background" in the
-prompt to get a PNG with alpha (added automatically for image -> image when a reference has
-alpha). Uses your Codex login and quota (run \`codex login\` first).`;
+prompt to get a PNG with alpha. Uses your Codex login and quota (run \`codex login\` first).`;
 
 class UsageError extends Error {}
 
@@ -67,7 +63,7 @@ async function getAuth() {
   return { token, accountId };
 }
 
-/** Parse an optional prompt, any number of --image paths, --quality and --out. */
+/** Parse one prompt, any number of --image paths, --quality and --out. */
 function parseArgs(argv) {
   const args = { prompt: undefined, images: [], quality: "auto", out: undefined };
   const value = (name, i) => {
@@ -97,9 +93,8 @@ function parseArgs(argv) {
     }
   }
 
-  if (args.prompt !== undefined && args.prompt.trim() === "") args.prompt = undefined;
-  if (args.prompt === undefined && args.images.length === 0) {
-    throw new UsageError("Give a prompt, at least one --image, or both. Run with --help for usage.");
+  if (args.prompt === undefined || args.prompt.trim() === "") {
+    throw new UsageError("A prompt is required, also with --image. Run with --help for usage.");
   }
   if (!QUALITIES.has(args.quality)) {
     throw new UsageError(`Invalid quality: ${args.quality}. Use auto, low, medium, or high.`);
@@ -113,20 +108,6 @@ function imageMime(bytes) {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
   return undefined;
-}
-
-/** Whether a PNG or WebP declares an alpha channel (header check only). */
-function hasAlpha(bytes, mime) {
-  if (mime === "image/png") {
-    const trns = bytes.indexOf("tRNS");
-    return [4, 6].includes(bytes[25]) || (trns !== -1 && trns < bytes.indexOf("IDAT"));
-  }
-  if (mime === "image/webp") {
-    const chunk = bytes.subarray(12, 16).toString("latin1");
-    if (chunk === "VP8X") return (bytes[20] & 0x10) !== 0;
-    if (chunk === "VP8L") return ((bytes[24] >> 4) & 1) === 1;
-  }
-  return false;
 }
 
 /** Load reference images as data URLs, failing early with a clear message. */
@@ -144,7 +125,7 @@ async function loadImages(paths) {
     const bytes = await readFile(path);
     const mime = imageMime(bytes);
     if (!mime) throw new UsageError(`Unsupported image type: ${path}. Use PNG, JPEG or WebP.`);
-    refs.push({ image_url: `data:${mime};base64,${bytes.toString("base64")}`, alpha: hasAlpha(bytes, mime) });
+    refs.push({ image_url: `data:${mime};base64,${bytes.toString("base64")}` });
   }
   return refs;
 }
@@ -153,16 +134,15 @@ async function loadImages(paths) {
 async function requestImage({ prompt, images, quality }) {
   const { token, accountId } = await getAuth();
   const editing = images.length > 0;
-  const variationPrompt = VARIATION_PROMPT + (images.some((ref) => ref.alpha) ? TRANSPARENT_SUFFIX : "");
   const body = {
-    prompt: prompt ?? variationPrompt,
+    prompt,
     background: "auto",
     model: MODEL,
     n: 1,
     quality,
     size: "auto",
   };
-  if (editing) body.images = images.map(({ image_url }) => ({ image_url }));
+  if (editing) body.images = images;
 
   const response = await fetch(`${API_BASE}/${editing ? "edits" : "generations"}`, {
     method: "POST",

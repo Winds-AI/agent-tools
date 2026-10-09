@@ -4,14 +4,15 @@ Minimal image generation and editing for pi (or any agent/harness) using your
 existing Codex login, authentication, and subscription quota. No extra API keys
 or accounts.
 
-Built for agents: one command, three modes picked from the arguments, one PNG
+Built for agents: one command, two modes picked from the arguments, one PNG
 path on stdout.
 
 | Mode | Arguments | Endpoint |
 |---|---|---|
 | Text → image | a prompt | `images/generations` |
 | Image + text → image | a prompt and one or more `--image` | `images/edits` |
-| Image → image | one or more `--image`, no prompt (makes a variation) | `images/edits` |
+
+A prompt is always required; the edits endpoint rejects requests without one.
 
 ## Usage
 
@@ -24,9 +25,6 @@ node codex-image.mjs "a tiny paper robot on a desk"
 # image + text -> image (edit, new pose, restyle, same character in a new scene)
 node codex-image.mjs "same character, now waving, transparent background" --image robot.png
 
-# image -> image (variation of the reference)
-node codex-image.mjs --image robot.png
-
 # several references, referred to as "image 1", "image 2" in the order given
 node codex-image.mjs "the robot from image 1 holding the cup from image 2" --image robot.png --image cup.jpg
 
@@ -37,7 +35,7 @@ node codex-image.mjs -h
 
 | Argument | Meaning |
 |---|---|
-| `<prompt>` (positional, at most one) | What to generate, or how to change the references. Required unless `--image` is given |
+| `<prompt>` (positional, required, exactly one) | What to generate, or how to change the references |
 | `--image <path>` (repeatable) | Reference image: PNG, JPEG or WebP, up to 32 MB each |
 | `--quality <auto\|low\|medium\|high>` | Generation quality; default `auto`. `low` is fastest |
 | `--out <path>` | Output PNG path; parent folders are created and an existing file is replaced. Default: a new temp file |
@@ -57,9 +55,8 @@ flag) and `1` for everything else (auth, rate limit, API errors).
   calls in parallel.
 - Size and aspect ratio are chosen by the model. Describe the shape in the
   prompt ("wide 16:9 landscape", "tall portrait").
-- Say "transparent background" in the prompt to get a PNG with alpha. In
-  image → image mode this is added automatically when a reference has an alpha
-  channel.
+- Say "transparent background" in the prompt to get a PNG with alpha; the
+  model does not keep a reference's transparency unless asked.
 - To keep a character consistent across many images, generate it once, then
   pass that image as `--image` with a prompt such as "same character, now …".
   Several poses in one call (a sprite sheet) also come out consistent.
@@ -74,8 +71,7 @@ the `gpt-image-2` model with automatic size and background. Authentication
 comes from `~/.codex/auth.json` (`$CODEX_HOME` is honored) via `Authorization:
 Bearer` + `ChatGPT-Account-Id` headers, with `originator: codex_cli_rs`.
 
-The edits endpoint requires a prompt, so image → image sends a fixed variation
-prompt. The endpoints do not reliably honor explicit dimensions, aspect ratios,
+The endpoints do not reliably honor explicit dimensions, aspect ratios,
 or output formats, so the tool exposes only the quality setting. There is no
 paid OpenAI API fallback.
 
