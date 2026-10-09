@@ -595,3 +595,33 @@ test("call cancellation clears active sessions and tombstones pending call IDs",
     assert.equal(calls.length, 0);
   }, callFactory);
 });
+
+test('thinking mode keeps the user\'s speech but drops voice replies and delegations until it ends', async () => {
+  await withBridge(async ({ base, stdout }) => {
+    const live = await startLive(base, 'thinking');
+    const send = event => post(base, '/live/event', { sessionId: live.sessionId, event });
+    await send({ type: 'bridge.datachannel.open' });
+    const browser = await stream(base);
+    try {
+      assert.equal((await post(base, '/control', { action: 'set-thinking', thinking: 'yes' })).status, 400);
+      const on = await post(base, '/control', { action: 'set-thinking', thinking: true });
+      assert.equal(on.status, 200);
+      const control = await browser.next('control');
+      assert.equal(control.action, 'set-thinking');
+      assert.equal(control.thinking, true);
+      await send({ type: 'input_transcript.added', item: { text: 'Maybe the timezone is wrong' } });
+      await send({ type: 'output_transcript.added', item: { text: 'Let me check that.' } });
+      await send({ type: 'delegation.created', item: { id: 'held', target: 'client', task: 'Maybe the timezone is wrong' } });
+      assert.equal(stdout.filter(e => e.type === 'delegate').length, 0, 'delegations are ignored while thinking');
+      const transcripts = stdout.filter(e => e.type === 'transcript' && e.delta);
+      assert.deepEqual(transcripts.map(e => e.role), ['U'], "GPT-Live's lines are dropped, the user's kept");
+      await post(base, '/control', { action: 'set-thinking', thinking: false });
+      assert.equal((await browser.next('control')).thinking, false);
+      await send({ type: 'input_transcript.added', item: { text: ' Okay go ahead' } });
+      await send({ type: 'delegation.created', item: { id: 'after', target: 'client', task: 'Okay go ahead' } });
+      const request = stdout.find(e => e.type === 'delegate');
+      assert.ok(request, 'delegation works again after thinking mode');
+      assert.ok(request.watermark >= 2, 'the request covers the speech from thinking mode too');
+    } finally { browser.close?.(); }
+  });
+});

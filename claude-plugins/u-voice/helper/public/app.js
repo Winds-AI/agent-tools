@@ -24,6 +24,7 @@
   let streamAbort;
   let connecting = false;
   let muted = false;
+  let lastThinkingRevision = 0;
   let closing = false;
   let callId;
   let callAbort;
@@ -234,6 +235,11 @@
         if (event.controlId === lastConnectControlId) return;
         lastConnectControlId = event.controlId;
         void connect(event.controlId);
+      } else if (event.action === "set-thinking") {
+        if (typeof event.thinking !== "boolean" || event.revision <= lastThinkingRevision) return;
+        lastThinkingRevision = event.revision;
+        // Thinking mode silences GPT-Live locally; the call and microphone stay live.
+        audio.muted = event.thinking;
       } else if (event.action === "set-mute") {
         if (event.liveSessionId !== sessionId || !microphone || typeof event.muted !== "boolean" || event.revision <= lastMuteRevision) return;
         lastMuteRevision = event.revision;

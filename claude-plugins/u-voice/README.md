@@ -16,6 +16,7 @@ Voice connects automatically. On first use, U-voice downloads a pinned Electron 
 
 - `/v` toggles voice on/off, including cancelling a connection in progress. Claude keeps working when voice stops.
 - `/m` toggles microphone mute. Replies remain audible and Claude keeps working.
+- **Think**, a button above the prompt while voice is on, switches thinking mode: talk to yourself without voice replies. Your speech is still transcribed, GPT-Live is silenced locally and its requests are ignored. Click **Stop thinking**, then ask normally ("go ahead"); that request carries everything you said while thinking. Clicking needs Claude Code's fullscreen mode.
 - `/uvoice status` shows its state.
 - `/uvoice start` and `/uvoice stop` explicitly start or stop voice.
 

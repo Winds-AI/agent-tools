@@ -158,6 +158,10 @@ export function createHelperServer({
     pendingConnect: undefined,
     controlRevision: 0,
     stopping: false,
+    // Thinking mode: the user talks to themselves. Their speech is still
+    // transcribed, but GPT-Live's audio is muted in the page, its delegations
+    // are ignored and its own lines are dropped.
+    thinking: false,
     lastDelegatedWatermark: 0,
     conversation: new Conversation(),
     latestFinal: "",
@@ -249,6 +253,7 @@ export function createHelperServer({
         microphoneReady: !!state.currentSession?.micReady,
         microphoneMuted: !!state.currentSession?.muted,
         desiredMicrophoneMuted: !!state.currentSession?.desiredMuted,
+        thinking: state.thinking,
       },
       statusEvents: state.statusEvents.slice(-20),
       agentEvents: state.agentEvents.slice(-20).map((event) => ({
@@ -283,6 +288,10 @@ export function createHelperServer({
 
   function makeControl(action, fields = {}) {
     return { type: "control", action, controlId: randomUUID(), revision: ++state.controlRevision, ...fields };
+  }
+
+  function broadcastThinking() {
+    broadcast(makeControl("set-thinking", { thinking: state.thinking }));
   }
 
   function clearSessionControls(session) {
@@ -445,6 +454,7 @@ export function createHelperServer({
         state.transcriptEvents.add(event.event_id);
         if (state.transcriptEvents.size > 1200) state.transcriptEvents.delete(state.transcriptEvents.values().next().value);
       }
+      if (state.thinking && event.type === "output_transcript.added") return { ignored: "thinking" };
       const fragment = state.conversation.add(event, sessionId);
       if (!fragment?.delta) return { ignored: true };
       if (!state.caption || state.caption.final || state.caption.role !== fragment.role) {
@@ -466,6 +476,10 @@ export function createHelperServer({
       if (!item || item.target !== "client") return { ignored: true };
       const delegationId = cleanIdentifier(item.id, 200);
       if (!delegationId) return { ignored: true };
+      // GPT-Live's own spoken filler already acknowledges it, so an ignored
+      // delegation is not re-sent. The speech stays in the ledger for the
+      // next request after thinking mode ends.
+      if (state.thinking) return { ignored: "thinking" };
       const key = sessionId + "\u0000" + delegationId;
       const duplicate = state.delegationByLiveId.get(key);
       if (duplicate) return { duplicate: true };
@@ -765,8 +779,8 @@ export function createHelperServer({
     }
 
     if (pathname === "/control") {
-      if (!["connect", "toggle-mute"].includes(body.action)) {
-        sendJson(response, 400, { error: "Expected connect or toggle-mute." });
+      if (!["connect", "toggle-mute", "set-thinking"].includes(body.action)) {
+        sendJson(response, 400, { error: "Expected connect, toggle-mute or set-thinking." });
         return;
       }
       if (state.stopping) {
@@ -786,6 +800,16 @@ export function createHelperServer({
         sendJson(response, 202, {
           ok: true, pending: true, controlId: state.pendingConnect.controlId, phase: state.phase,
         });
+        return;
+      }
+      if (body.action === "set-thinking") {
+        if (typeof body.thinking !== "boolean") {
+          sendJson(response, 400, { error: "Expected thinking to be true or false." });
+          return;
+        }
+        state.thinking = body.thinking;
+        broadcastThinking();
+        sendJson(response, 200, { ok: true, thinking: state.thinking });
         return;
       }
       const session = state.currentSession;
@@ -960,6 +984,8 @@ export function createHelperServer({
         session.remoteOpen = true;
         publishStatus("connecting", "Voice channel open. Starting microphone.", session.id);
         flushPendingLiveEvents(session.id);
+        // A reconnected call keeps thinking mode's muted playback.
+        if (state.thinking) broadcastThinking();
       } else if (event.type === "bridge.mic.ready") {
         if (!session.remoteOpen) {
           sendJson(response, 409, { error: "Voice channel is not ready." });

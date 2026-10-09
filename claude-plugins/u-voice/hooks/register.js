@@ -10,6 +10,9 @@ export function register(on) {
   let timer;
   let queue = [];
   let phase = 'off';
+  // Thinking mode: the user talks to themselves. Speech is still transcribed
+  // for Claude, but GPT-Live is silent and its delegations are ignored.
+  let thinking = false;
   let generation = 0;
   let outgoing;
   const instructions = createModeContext();
@@ -194,13 +197,12 @@ export function register(on) {
               instructions.set(['listening', 'muted'].includes(event.phase));
               runtime.redraw();
               if (['idle', 'error', 'stopping'].includes(event.phase)) controller?.cancelPending();
-              const labels = { connecting: 'Connecting', listening: 'Listening', muted: 'Muted', idle: 'Off', stopping: 'Off', error: 'Error' };
-              runtime.status('Voice: ' + (labels[event.phase] || event.phase) + (event.phase === 'error' ? ' · ' + event.message : ' · /v toggle · /m mute'));
+              showStatus(event.message);
             } else if (event.type === 'error') { phase = 'error'; instructions.set(false); runtime.redraw(); runtime.toast(event.message || 'Voice connection failed.'); }
           }
         }
         if (stamp === generation && child === task) {
-          child = undefined; helper = undefined; starting = undefined; phase = 'off'; timer?.cancel();
+          child = undefined; helper = undefined; starting = undefined; phase = 'off'; timer?.cancel(); thinking = false;
           controller?.cancelPending();
           instructions.set(false); runtime.redraw();
           settleReady(task, new Error('Voice helper exited before starting.'));
@@ -208,7 +210,7 @@ export function register(on) {
         }
       } catch {
         if (stamp === generation && child === task) {
-          child = undefined; helper = undefined; starting = undefined; phase = 'error'; timer?.cancel();
+          child = undefined; helper = undefined; starting = undefined; phase = 'error'; timer?.cancel(); thinking = false;
           controller?.cancelPending();
           instructions.set(false); runtime.redraw();
           const message = savingPrevious ? 'Previous voice conversation has not been saved yet. Its captions are still visible; retry /v.' : 'Could not start the voice helper. Node.js 22 or newer is required.';
@@ -220,13 +222,33 @@ export function register(on) {
     return ready;
   }
 
+  function voiceActive() { return Boolean(helper) && ['listening', 'muted'].includes(phase); }
+
+  function showStatus(message) {
+    const labels = { connecting: 'Connecting', listening: 'Listening', muted: 'Muted', idle: 'Off', stopping: 'Off', error: 'Error' };
+    const label = (labels[phase] || phase) + (thinking && voiceActive() ? ' · Thinking (voice silent)' : '');
+    runtime.status('Voice: ' + label + (phase === 'error' ? ' · ' + message : ' · /v toggle · /m mute'));
+  }
+
+  async function setThinking(value) {
+    if (!voiceActive()) return;
+    const target = helper;
+    try {
+      const response = await runtime.fetch(target.url + '/control', { method: 'POST', headers: { Authorization: 'Bearer ' + target.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set-thinking', thinking: value }) });
+      if (target !== helper || !response.ok) throw new Error('Thinking mode was not changed.');
+      thinking = value;
+      showStatus();
+      runtime.redraw();
+    } catch { runtime.toast('Could not switch thinking mode. Voice keeps its current mode.'); }
+  }
+
   async function stop() {
     const old = helper;
     const task = child;
     if (task) task.stopping = true;
     const stamp = ++generation;
     timer?.cancel(); timer = undefined;
-    child = undefined; helper = undefined; phase = 'off'; queue = []; starting = undefined; outgoing = undefined;
+    child = undefined; helper = undefined; phase = 'off'; queue = []; starting = undefined; outgoing = undefined; thinking = false;
     instructions.set(false); runtime.redraw();
     controller?.cancelPending();
     if (task) settleReady(task, new Error('Voice startup was cancelled.'));
@@ -329,10 +351,15 @@ export function register(on) {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const pending = transcript.pendingCaptions().filter(row => row.text.trim());
-    if (e.props.hasSurvey || !pending.length) return next(e);
-    const { Box, Text } = $.ui.resolve(e);
-    const rows = pending.slice(-Math.max(1, Math.min(3, e.props.maxRows - 1)));
-    return Box({ flexDirection: 'column', children: [await next(e), ...rows.map(row => Text({ dimColor: Boolean(captions.find(c => c.id === row.utteranceId)?.final), wrap: 'truncate-end', children: (row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim() }))] });
+    const active = voiceActive();
+    if (e.props.hasSurvey || (!pending.length && !active)) return next(e);
+    const { Box, Button, Text } = $.ui.resolve(e);
+    const rows = pending.slice(-Math.max(1, Math.min(3, e.props.maxRows - (active ? 2 : 1))));
+    const toggle = active ? [Box({ flexDirection: 'row', children: [
+      Button({ key: 'uvoice-think', label: thinking ? 'Stop thinking' : 'Think', onPress: () => setThinking(!thinking) }),
+      Text({ dimColor: true, children: thinking ? ' Voice is silent; your speech goes to Claude with your next request.' : ' Talk to yourself without voice replies.' }),
+    ] })] : [];
+    return Box({ flexDirection: 'column', children: [await next(e), ...toggle, ...rows.map(row => Text({ dimColor: Boolean(captions.find(c => c.id === row.utteranceId)?.final), wrap: 'truncate-end', children: (row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim() }))] });
   });
   // Constant text after the cache boundary: present whether or not voice is on,
   // so toggling voice never rewrites the system prompt.

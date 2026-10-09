@@ -24,6 +24,8 @@ function stream() {
     [Symbol.asyncIterator]() { return this; },
   };
 }
+// The band may hold the Think button while voice is on; captions are its You:/Voice: rows.
+const captionsShown = tree => /"(?:You|Voice): /.test(JSON.stringify(tree ?? null));
 async function harness() {
   const hooks = new Map(), timers = [], intervals = [], children = [], fetches = [], statuses = [], submits = [], commands = [], logs = [], appends = [], spawns = [], redraws = [], toasts = [];
   const on = (name, ...args) => hooks.set(name === 'command.run' ? name + ':' + args[0].command : name, args.at(-1));
@@ -39,7 +41,7 @@ async function harness() {
     command: { register: async command => commands.push(command) },
     http: { fetch: async (url, init) => { fetches.push({ url, init }); if (url.endsWith('/shutdown')) children.at(-1)?.finish(); return { ok: true, text: JSON.stringify({ muted: true }) }; } },
     process: { run: async () => ({}), spawn: input => { spawns.push(input); const value = stream(); children.push(value); return value; } },
-    ui: { status: text => statuses.push(text), toast: text => toasts.push(text), copy: async () => {}, log: text => logs.push(text), invalidate: name => redraws.push(name), resolve: () => ({ Box: props => ({ type: 'Box', props }), Text: props => ({ type: 'Text', props }) }) },
+    ui: { status: text => statuses.push(text), toast: text => toasts.push(text), copy: async () => {}, log: text => logs.push(text), invalidate: name => redraws.push(name), resolve: () => ({ Box: props => ({ type: 'Box', props }), Button: props => ({ type: 'Button', props }), Text: props => ({ type: 'Text', props }) }) },
     prompt: { submit: async args => { submits.push(args); return args; } },
     session: { append: async args => { appends.push(args); return { uuid: 'row-' + appends.length }; }, messages: async () => [{ role: 'user', text: 'Existing task: fix the parser', toolUses: [] }] },
   };
@@ -124,7 +126,7 @@ test('stop immediately rejects new helper work even when transcript saving hangs
   assert.equal(h.children[0].returned, 1);
   assert.match(JSON.stringify(await h.render()), /You: Preserve this constraint/);
   resolveAppend({ uuid: 'late-save' }); await tick();
-  assert.equal(await h.render(), null, 'late successful save clears captions after voice stops');
+  assert.equal(captionsShown(await h.render()), false, 'late successful save clears captions after voice stops');
   await h.hook('prompt.submit', { text: 'Typed follow-up', origin: { kind: 'composer' } });
   assert.equal(h.appends.length, 1, 'late successful save is not duplicated');
 });
@@ -204,10 +206,10 @@ test('captions stay temporary and clear as soon as their delegation is accepted'
   assert.match(JSON.stringify(await h.render()), /You: Fix the parser/, 'finished speech stays visible until accepted');
   const beforeAcceptance = h.redraws.length;
   h.children[0].push({ type: 'delegate', id: 'internal-id', text: 'Fix it', watermark: 1 }); await tick();
-  assert.equal(await h.render(), null);
+  assert.equal(captionsShown(await h.render()), false);
   assert.ok(h.redraws.length > beforeAcceptance, 'acceptance requests an immediate redraw');
   h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix the parser', final: true }); await tick();
-  assert.equal(await h.render(), null, 'a late final transcript cannot resurrect sent speech');
+  assert.equal(captionsShown(await h.render()), false, 'a late final transcript cannot resurrect sent speech');
   assert.deepEqual(h.logs, []);
   assert.equal(h.submits.length, 1);
   assert.match(h.submits[0].text, /Fix the parser/);
@@ -242,7 +244,7 @@ for (const mode of ['submit', 'append']) {
       h.$.session.append = async args => { h.appends.push(args); return { uuid: 'recovery' }; };
       await h.command('stop');
       assert.match(h.appends.at(-1).message.content[0].text, /Keep the API/);
-      assert.equal(await h.render(), null, 'successful context save clears only the recovered speech');
+      assert.equal(captionsShown(await h.render()), false, 'successful context save clears only the recovered speech');
     });
   }
 }
@@ -264,7 +266,7 @@ test('partial acceptance keeps newer words of the same utterance while a submit 
   await h.command('stop');
   assert.match(h.appends[0].message.content[0].text, /and keep the API/);
   assert.doesNotMatch(h.appends[0].message.content[0].text, /Fix parser/);
-  assert.equal(await h.render(), null);
+  assert.equal(captionsShown(await h.render()), false);
   assert.deepEqual(h.logs, []);
 });
 
@@ -286,7 +288,7 @@ test('busy append acceptance clears user and voice captions without hiding newer
   assert.ok(h.redraws.length > beforeAcceptance);
   h.$.session.append = async () => ({ uuid: 'remaining' });
   await h.command('stop');
-  assert.equal(await h.render(), null);
+  assert.equal(captionsShown(await h.render()), false);
   assert.deepEqual(h.logs, []);
 });
 
@@ -304,7 +306,7 @@ test('unsaved captions survive stop and a failed reconnect instead of being eras
   h.$.session.append = async args => { h.appends.push(args); return { uuid: 'recovered' }; };
   await startListening(h);
   assert.match(h.appends[0].message.content[0].text, /Keep my constraint/);
-  assert.equal(await h.render(), null);
+  assert.equal(captionsShown(await h.render()), false);
   await h.command('stop');
   assert.deepEqual(h.logs, []);
 });
@@ -327,7 +329,7 @@ test('start and end instructions append only on transitions, with typed context 
   h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Keep the API', delta: 'Keep the API', sequence: 1 }); await tick();
   await h.hook('prompt.submit', input);
   assert.equal(h.appends.length, 1); assert.match(h.appends[0].message.content[0].text, /^<voice reason="typed">\nU: Keep the API\n<\/voice>$/);
-  assert.equal(await h.render(), null, 'saving voice context before typed input also clears captions');
+  assert.equal(captionsShown(await h.render()), false, 'saving voice context before typed input also clears captions');
   await h.hook('prompt.submit', input); assert.equal(h.appends.length, 1);
   await h.command('stop');
   const after = await h.hook('prompt.submit', input);
@@ -363,5 +365,29 @@ test('idle self-submission owns its turn without native prompt-hook re-entry and
   await h.intervals[0].fn();
   const events = JSON.parse(h.fetches.find(f => f.url.endsWith('/agent-events')).init.body).events;
   assert.ok(events.some(e => e.kind === 'final' && e.speak && e.requestIds.includes('idle')));
+  await h.command('stop');
+});
+
+test('the Think button silences voice replies through the helper and resets when voice stops', async () => {
+  const h = await harness(); const launching = h.command('start'); h.kickoff(); await tick();
+  h.children[0].push({ type: 'ready', port: 4567 }); await launching;
+  assert.equal(JSON.stringify(await h.render()).includes('Think'), false, 'no button before voice is listening');
+  h.children[0].push({ type: 'status', phase: 'listening' }); await tick();
+  const button = tree => JSON.stringify(tree).includes('Stop thinking') ? 'Stop thinking' : JSON.stringify(tree).includes('"Think"') ? 'Think' : undefined;
+  const press = async () => (await h.render()).props.children[1].props.children[0].props.onPress();
+  assert.equal(button(await h.render()), 'Think');
+  await press();
+  const control = h.fetches.findLast(f => f.url.endsWith('/control'));
+  assert.deepEqual(JSON.parse(control.init.body), { action: 'set-thinking', thinking: true });
+  assert.equal(button(await h.render()), 'Stop thinking');
+  assert.match(h.statuses.at(-1), /Thinking \(voice silent\)/);
+  await press();
+  assert.deepEqual(JSON.parse(h.fetches.findLast(f => f.url.endsWith('/control')).init.body), { action: 'set-thinking', thinking: false });
+  await press();
+  await h.command('stop');
+  const relaunch = h.command('start'); h.kickoff(); await tick();
+  h.children.at(-1).push({ type: 'ready', port: 4568 }); await relaunch;
+  h.children.at(-1).push({ type: 'status', phase: 'listening' }); await tick();
+  assert.equal(button(await h.render()), 'Think', 'a new voice session starts outside thinking mode');
   await h.command('stop');
 });
