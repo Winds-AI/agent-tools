@@ -142,7 +142,8 @@ test('debounce keeps trailing constraints but cannot regain speech after typed i
       { kind: 'delivery', requestId: request.id, state: 'accepted' },
       { kind: 'final', text: 'Old result', requestIds: [request.id], speak: true },
     ] });
-    assert.equal(liveSends.at(-1).event.channel, 'commentary');
+    // Superseded results are not sent to GPT-Live at all.
+    assert.equal(liveSends.some(r => r.event.content?.[0]?.text?.includes('Old result')), false);
   }, undefined, { delegationDelayMs: 30, captionDelayMs: 1000 });
 });
 
@@ -178,7 +179,8 @@ test('final speech targets the newest observed delegation and buffered old speec
     ] });
     await send({ type: 'bridge.datachannel.open' });
     assert.equal(liveSends.some(r => r.event.channel === 'speakable'), false);
-    assert.ok(liveSends.some(r => r.event.content[0].text.includes('Do something else')));
+    // Typed input is not mirrored to GPT-Live.
+    assert.equal(liveSends.some(r => r.event.content?.[0]?.text?.includes('Do something else')), false);
   });
 });
 
@@ -501,28 +503,32 @@ test("finals use same-session delegation IDs and fall back to session context af
     await post(base, "/agent-events", {
       events: [{ kind: "final", text: "The earlier result still has 12 files.", requestIds: [pending.id] }],
     });
-    assert.equal(liveSends.at(-1).event.type, "session.context.append");
-    assert.equal("delegation_item_id" in liveSends.at(-1).event, false);
-    assert.equal(liveSends.at(-1).liveSessionId, second.sessionId);
+    // A result from a previous call is kept for reference but not sent to the new call.
+    assert.equal(liveSends.some((item) => item.liveSessionId === second.sessionId && item.event.content?.[0]?.text?.includes("earlier result")), false);
     const state = await (await fetch(base + "/state", { headers: { Authorization: "Bearer " + TOKEN } })).json();
     assert.equal(state.latestFinal.reason, "answer");
     assert.match(state.latestFinal.text, /earlier result still has 12 files/);
     assert.equal(state.agentEvents.find((event) => event.kind === "tool").tool, "Read");
-    assert.ok(state.outboundEvents.some((event) => event.type === "session.context.append"));
   });
 });
 
 test("empty aborted and error finals are announced without claiming success", async () => {
-  await withBridge(async ({ base, liveSends }) => {
+  await withBridge(async ({ base, liveSends, stdout }) => {
     const live = await startLive(base);
-    await post(base, "/live/event", { sessionId: live.sessionId, event: { type: "bridge.datachannel.open" } });
-    await post(base, "/agent-events", {
-      events: [
-        { kind: "final", text: "", reason: "aborted", isAborted: true },
-        { kind: "final", text: "", reason: "error", isAborted: false },
-      ],
-    });
-    const spoken = liveSends.map((item) => item.event.content?.[0]?.text).filter(Boolean);
+    const send = event => post(base, "/live/event", { sessionId: live.sessionId, event });
+    await send({ type: "bridge.datachannel.open" });
+    for (const [id, reason] of [["stopped-task", "aborted"], ["failed-task", "error"]]) {
+      await send({ type: "input_transcript.added", item: { text: "Do " + id } });
+      await send({ type: "delegation.created", item: { id, target: "client", task: "Do " + id } });
+      const request = stdout.filter(e => e.type === "delegate").at(-1);
+      await post(base, "/agent-events", {
+        events: [
+          { kind: "delivery", requestId: request.id, state: "accepted" },
+          { kind: "final", text: "", reason, isAborted: reason === "aborted", requestIds: [request.id], speak: true },
+        ],
+      });
+    }
+    const spoken = liveSends.filter((item) => item.event.channel === "speakable").map((item) => item.event.content?.[0]?.text);
     assert.ok(spoken.some((text) => text.includes("task was stopped")));
     assert.ok(spoken.some((text) => text.includes("reported an error")));
     assert.equal(spoken.some((text) => text.includes("completed successfully")), false);

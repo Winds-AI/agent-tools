@@ -313,22 +313,25 @@ test('start and end instructions append only on transitions, with typed context 
   const h = await harness(); const launching = h.command('start'); h.kickoff(); await tick();
   h.children[0].push({ type: 'ready', port: 4567 }); await launching;
   assert.match(h.spawns[0].env.UVOICE_CONTEXT_SEED, /Existing task/);
-  assert.equal(h.hooks.has('prompt.compose'), false);
+  // One constant section, appended after the cache boundary, whether or not voice is on.
+  const composed = await h.hook('prompt.compose', {}, async () => ({ sections: [{ id: 'intro', text: 'Engine', scope: 'shared' }] }));
+  assert.deepEqual(composed.sections.map(section => [section.id, section.scope]), [['intro', 'shared'], ['uvoice:voice-mode', 'session']]);
+  assert.match(composed.sections[1].text, /^# Voice mode/);
   h.children[0].push({ type: 'status', phase: 'listening' }); await tick();
   const input = { text: 'Typed', origin: { kind: 'composer' } };
   const first = await h.hook('prompt.submit', input);
-  assert.match(first.context[0], /Voice mode is now attached/);
+  assert.match(first.context[0], /<voice_mode state="on">/);
   assert.equal((await h.hook('prompt.submit', input)).context, undefined);
   h.children[0].push({ type: 'status', phase: 'muted' }); await tick();
   assert.equal((await h.hook('prompt.submit', input)).context, undefined, 'mute changes no model instruction');
   h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Keep the API', delta: 'Keep the API', sequence: 1 }); await tick();
   await h.hook('prompt.submit', input);
-  assert.equal(h.appends.length, 1); assert.match(h.appends[0].message.content[0].text, /Keep the API/);
+  assert.equal(h.appends.length, 1); assert.match(h.appends[0].message.content[0].text, /^<voice reason="typed">\nU: Keep the API\n<\/voice>$/);
   assert.equal(await h.render(), null, 'saving voice context before typed input also clears captions');
   await h.hook('prompt.submit', input); assert.equal(h.appends.length, 1);
   await h.command('stop');
   const after = await h.hook('prompt.submit', input);
-  assert.match(after.context[0], /Voice mode is now off/);
+  assert.match(after.context[0], /<voice_mode state="off">/);
   assert.equal((await h.hook('prompt.submit', input)).context, undefined);
 });
 
@@ -339,7 +342,7 @@ test('mode transition at a running tool boundary preserves downstream context an
   await h.hook('prompt.submit', { text: 'Dropped', origin: { kind: 'composer' } }, async () => ({ drop: 'No' }));
   const result = await h.hook('tool.call', { tool: 'Read' }, async () => ({ context: ['existing reminder'], output: 'fixture', isError: false }));
   assert.equal(result.output, 'fixture'); assert.equal(result.context[0], 'existing reminder');
-  assert.match(result.context[1], /Voice mode is now attached/);
+  assert.match(result.context[1], /<voice_mode state="on">/);
   assert.equal((await h.hook('tool.call', { tool: 'Read' }, async () => ({ output: 'again' }))).context, undefined);
   await h.command('stop');
 });
@@ -351,7 +354,7 @@ test('idle self-submission owns its turn without native prompt-hook re-entry and
   h.children[0].push({ type: 'delegate', id: 'idle', text: 'Read the fixture' }); await tick();
   const context = await h.hook('classic.UserPromptSubmit', { prompt: 'Read the fixture' }, async () => ({ additionalContext: ['existing context'] }));
   assert.equal(context.additionalContext[0], 'existing context');
-  assert.match(context.additionalContext[1], /Voice mode is now attached/);
+  assert.match(context.additionalContext[1], /<voice_mode state="on">/);
   assert.equal((await h.hook('classic.UserPromptSubmit', {})).additionalContext, undefined);
   await h.hook('turn.start', { text: h.submits[0].text, turnId: 'idle-turn' });
   const chunks = h.hook('turn.step', { turnId: 'idle-turn', index: 0 }, async function* () { yield { kind: 'text', text: 'Done' }; });

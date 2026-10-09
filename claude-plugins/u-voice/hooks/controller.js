@@ -1,6 +1,10 @@
 // This file also runs in Node's offline tests; it uses no Node APIs.
+import { voiceBlock } from './voice-state.js';
+
+// The delegation text is the user's own turn, already inside the transcript
+// delta; send it alone only when the ledger had nothing new.
 function requestText(request) {
-  return request.text.trim() + (request.context && request.context.trim() !== request.text.trim() ? '\n\nVoice conversation:\n' + request.context.trim() : '');
+  return voiceBlock('request', request.context?.trim() || 'U: ' + request.text.trim());
 }
 
 const terminal = state => ['complete', 'denied', 'cancelled'].includes(state);

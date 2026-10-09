@@ -227,3 +227,15 @@ test('a new spoken utterance cannot make an old result speak before its request 
   assert.equal(h.events.filter(e => e.kind === 'final').at(-1).speak, false);
   assert.equal(h.submits.length, 2);
 });
+
+test('a voice request reaches Claude as one voice block, without repeating the delegation text', async () => {
+  const idle = harness();
+  await idle.controller.delegate({ id: 'with-context', text: 'Fix the parser', context: 'U: um the parser\nA: Okay.\nU: Fix the parser' });
+  await tick();
+  assert.equal(idle.submits[0].text, '<voice reason="request">\nU: um the parser\nA: Okay.\nU: Fix the parser\n</voice>');
+  const busy = harness();
+  busy.begin();
+  await busy.controller.delegate({ id: 'no-context', text: 'Keep the API' });
+  await tick();
+  assert.equal(busy.appends[0].message.content[0].text, '<voice reason="request">\nU: Keep the API\n</voice>');
+});

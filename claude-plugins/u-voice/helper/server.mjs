@@ -97,6 +97,19 @@ function safeStatusText(value) {
   return cleanText(value).replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 1600);
 }
 
+const MAX_SPOKEN_RESULT = 600;
+
+/** The first paragraph of Claude's answer, which the system prompt asks it to write for speech. */
+function spokenSummary(value) {
+  if (typeof value !== "string") return "";
+  const paragraph = value.split(/\n\s*\n/).find((part) => part.trim()) ?? "";
+  const text = safeStatusText(paragraph);
+  if (text.length <= MAX_SPOKEN_RESULT) return text;
+  const cut = text.slice(0, MAX_SPOKEN_RESULT);
+  const sentenceEnd = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+  return sentenceEnd > 0 ? cut.slice(0, sentenceEnd + 1) : cut;
+}
+
 function redactLikelySecrets(value) {
   return String(value)
     .replace(/\b(?:sk|rk)-[A-Za-z0-9_-]{16,}\b/g, "[redacted]")
@@ -564,6 +577,7 @@ export function createHelperServer({
 
   function handleFinal(event, requestIds) {
     const suppliedText = safeStatusText(event.text);
+    const spokenText = spokenSummary(event.text);
     let reason = ["answer", "aborted", "refusal", "error"].includes(event.reason)
       ? event.reason
       : event.isAborted === true
@@ -572,18 +586,10 @@ export function createHelperServer({
     const isAborted = event.isAborted === true || reason === "aborted";
     if (isAborted) reason = "aborted";
 
-    let finalText = suppliedText;
-    if (isAborted) {
-      finalText = suppliedText ? "The task was stopped. " + suppliedText : "The task was stopped.";
-    } else if (reason === "error") {
-      finalText = suppliedText
-        ? "Claude Code reported an error. " + suppliedText
-        : "Claude Code reported an error while handling the task.";
-    } else if (reason === "refusal") {
-      finalText = suppliedText
-        ? "Claude Code declined the task. " + suppliedText
-        : "Claude Code declined the task.";
-    }
+    const prefix = isAborted ? "The task was stopped." : reason === "error" ? "Claude Code reported an error." : reason === "refusal" ? "Claude Code declined the task." : "";
+    const fallback = reason === "error" ? "Claude Code reported an error while handling the task." : prefix;
+    const withPrefix = (text) => (text ? (prefix ? prefix + " " + text : text) : fallback);
+    const finalText = withPrefix(suppliedText);
     if (!finalText) return false;
 
     state.latestFinal = finalText.slice(0, MAX_FINAL_REFERENCE);
@@ -601,7 +607,9 @@ export function createHelperServer({
       const record = state.delegationByRequest.get(id);
       return record?.accepted && record.liveSessionId === state.currentSession?.id && record.speechGeneration === state.speechGeneration;
     });
-    appendContext(finalText, event.speak === true && currentRequest ? 'speakable' : 'commentary', requestIds);
+    // Only the latest spoken request's result reaches GPT-Live, and only its
+    // first paragraph: Claude leads with a spoken summary, details follow.
+    if (event.speak === true && currentRequest) appendContext(withPrefix(spokenText), 'speakable', requestIds);
     pruneTerminalDelegations();
     return true;
   }
@@ -630,15 +638,6 @@ export function createHelperServer({
     }
     if (kind === 'input' && event.origin === 'typed') {
       finishCaption(); invalidateSpeech();
-      const text = typeof event.text === 'string' ? cleanText(event.text).slice(-8000) : '';
-      if (text) appendContext('Typed user message:\n' + text, 'commentary');
-      return true;
-    }
-
-    if (kind === "tool") {
-      const tool = normalizeSafeTool(event.tool);
-      const status = ["started", "completed", "error"].includes(event.status) ? event.status : "updated";
-      appendContext("Tool " + tool + " " + status + ".", "commentary");
       return true;
     }
 
@@ -650,17 +649,8 @@ export function createHelperServer({
       return handleFinal(event, requestIds);
     }
 
-    if (["status", "progress", "text", "steering"].includes(kind)) {
-      const text = safeStatusText(event.text ?? event.message ?? event.step);
-      if (text) appendContext(text, "commentary");
-      return true;
-    }
-
-    if (kind === "turn" && event.status === "started") {
-      appendContext("Claude Code started working on the request.", "commentary");
-      return true;
-    }
-
+    // GPT-Live gets no progress (tool activity, interim text, typed input):
+    // it acts only on results, and every extra line is something it may speak.
     return true;
   }
 

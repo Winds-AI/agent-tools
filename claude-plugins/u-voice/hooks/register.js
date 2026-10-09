@@ -1,5 +1,5 @@
 import { createController } from './controller.js';
-import { createModeContext, createTranscriptLedger, seedHistory } from './voice-state.js';
+import { VOICE_SYSTEM_SECTION, createModeContext, createTranscriptLedger, seedHistory, voiceBlock } from './voice-state.js';
 
 export function register(on) {
   let runtime;
@@ -52,14 +52,14 @@ export function register(on) {
     runtime.redraw();
   }
 
-  async function syncTranscript() {
+  async function syncTranscript(reason) {
     const ledger = transcript;
     if (ledger.flight) await ledger.flight;
     const note = ledger.reserve();
     if (!note) return;
     const flight = (async () => {
       try {
-        const result = await runtime.append({ message: { type: 'user', content: [{ type: 'text', text: 'Voice conversation:\n' + note.text }] } });
+        const result = await runtime.append({ message: { type: 'user', content: [{ type: 'text', text: voiceBlock(reason, note.text) }] } });
         if (result?.uuid) {
           const watermark = ledger.commit(note);
           if (ledger === transcript) { runtime.redraw(); emit({ kind: 'context', watermark }); }
@@ -148,7 +148,7 @@ export function register(on) {
         // Do not erase unsaved captions when reconnecting after a failed save.
         if (transcript.pendingCaptions().length) {
           savingPrevious = true;
-          await syncTranscript();
+          await syncTranscript('voice-off');
           if (transcript.pendingCaptions().length) throw new Error('Voice context is still pending.');
           savingPrevious = false;
         }
@@ -240,7 +240,7 @@ export function register(on) {
     }).catch(() => {}) : Promise.resolve();
     // Saving context shares the teardown deadline. New helper events are already
     // invalidated, and a late successful append keeps ownership of its ledger.
-    const drain = old ? syncTranscript().catch(() => {
+    const drain = old ? syncTranscript('voice-off').catch(() => {
       runtime.toast('Some voice conversation could not be saved; its captions are still visible.');
     }) : Promise.resolve();
     const deadline = new Promise(resolve => { shutdownTimeout = runtime.after(1000, resolve); });
@@ -334,10 +334,16 @@ export function register(on) {
     const rows = pending.slice(-Math.max(1, Math.min(3, e.props.maxRows - 1)));
     return Box({ flexDirection: 'column', children: [await next(e), ...rows.map(row => Text({ dimColor: Boolean(captions.find(c => c.id === row.utteranceId)?.final), wrap: 'truncate-end', children: (row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim() }))] });
   });
+  // Constant text after the cache boundary: present whether or not voice is on,
+  // so toggling voice never rewrites the system prompt.
+  on('prompt.compose', async ($, e, next) => {
+    const result = await next(e);
+    return { ...result, sections: [...result.sections, { id: 'uvoice:voice-mode', text: VOICE_SYSTEM_SECTION, scope: 'session' }] };
+  });
   on('prompt.submit', async ($, e, next) => {
     const token = controller?.prompt(e, $.plugin.name);
     if (['composer', 'bridge', 'sdk'].includes(e.origin.kind)) {
-      try { await syncTranscript(); } catch { runtime.toast('Voice context could not be saved before this typed request.'); }
+      try { await syncTranscript('typed'); } catch { runtime.toast('Voice context could not be saved before this typed request.'); }
     }
     const note = instructions.reserve();
     try {
