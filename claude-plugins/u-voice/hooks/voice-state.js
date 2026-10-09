@@ -17,6 +17,16 @@ export function createModeContext() {
   };
 }
 
+function transcriptRows(fragments) {
+  const rows = [];
+  for (const f of fragments) {
+    const last = rows.at(-1);
+    if (last?.role === f.role && last.utteranceId === f.utteranceId) last.text += f.delta;
+    else rows.push({ role: f.role, text: f.delta, utteranceId: f.utteranceId });
+  }
+  return rows;
+}
+
 export function createTranscriptLedger() {
   const fragments = new Map(), reservations = new Set();
   let deliveredThrough = 0;
@@ -28,15 +38,14 @@ export function createTranscriptLedger() {
       if (!Number.isSafeInteger(event.sequence) || event.sequence <= deliveredThrough || typeof event.delta !== 'string' || !['U', 'A'].includes(event.role) || fragments.has(event.sequence)) return;
       fragments.set(event.sequence, { ...event, delivered: false });
     },
+    // A read-only view: pending writes remain visible until explicitly committed.
+    pendingCaptions() {
+      return transcriptRows([...fragments.values()].filter(f => !f.delivered).sort((a, b) => a.sequence - b.sequence));
+    },
     reserve(through = Infinity) {
       const picked = [...fragments.values()].filter(f => !f.delivered && !f.held && f.sequence <= through).sort((a, b) => a.sequence - b.sequence);
       if (!picked.length) return;
-      const rows = [];
-      for (const f of picked) {
-        const last = rows.at(-1);
-        if (last?.role === f.role && last.utteranceId === f.utteranceId) last.text += f.delta;
-        else rows.push({ role: f.role, text: f.delta, utteranceId: f.utteranceId });
-      }
+      const rows = transcriptRows(picked);
       const note = { fragments: picked, text: rows.map(r => r.role + ': ' + r.text.trim()).filter(r => r.length > 3).join('\n') };
       if (!note.text) return;
       for (const f of picked) f.held = note;

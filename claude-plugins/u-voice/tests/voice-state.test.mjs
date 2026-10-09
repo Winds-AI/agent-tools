@@ -26,6 +26,41 @@ test('transcript reservations avoid overlapping payloads and retain rejected ear
   assert.equal(ledger.reserve(), undefined);
 });
 
+test('caption snapshots include reserved speech and remove only committed fragments', () => {
+  const ledger = createTranscriptLedger();
+  ledger.add({ role: 'U', sequence: 1, delta: 'Fix parser', utteranceId: 'u1' });
+  const first = ledger.reserve(1);
+  ledger.add({ role: 'U', sequence: 2, delta: ' and keep the API', utteranceId: 'u1' });
+  assert.deepEqual(ledger.pendingCaptions(), [{ role: 'U', text: 'Fix parser and keep the API', utteranceId: 'u1' }]);
+  ledger.commit(first);
+  assert.deepEqual(ledger.pendingCaptions(), [{ role: 'U', text: ' and keep the API', utteranceId: 'u1' }]);
+  ledger.add({ role: 'U', sequence: 1, delta: 'Fix parser', utteranceId: 'u1' });
+  assert.equal(ledger.pendingCaptions()[0].text, ' and keep the API', 'duplicate delivered fragments stay hidden');
+  const second = ledger.reserve();
+  assert.equal(second.text, 'U: and keep the API', 'rendering does not consume or reserve speech');
+  ledger.release(second);
+  assert.equal(ledger.pendingCaptions().length, 1);
+  ledger.commit(ledger.reserve());
+  assert.deepEqual(ledger.pendingCaptions(), []);
+});
+
+test('out-of-order acceptance clears later captions while retaining rejected earlier speech', () => {
+  const ledger = createTranscriptLedger();
+  ledger.add({ role: 'U', sequence: 1, delta: 'Earlier constraint', utteranceId: 'u1' });
+  const first = ledger.reserve();
+  ledger.add({ role: 'A', sequence: 2, delta: 'Later response', utteranceId: 'a1' });
+  const second = ledger.reserve();
+  assert.equal(ledger.commit(second), 0);
+  assert.deepEqual(ledger.pendingCaptions(), [{ role: 'U', text: 'Earlier constraint', utteranceId: 'u1' }]);
+  ledger.release(first);
+  assert.equal(ledger.pendingCaptions().length, 1);
+  ledger.commit(ledger.reserve());
+  assert.deepEqual(ledger.pendingCaptions(), []);
+  ledger.add({ role: 'U', sequence: 3, delta: 'New speech', utteranceId: 'u2' });
+  ledger.reset();
+  assert.deepEqual(ledger.pendingCaptions(), []);
+});
+
 test('history seed keeps text and omits tool results and private thinking', () => {
   const seed = seedHistory([{ role: 'user', text: 'Existing request', toolResults: [{ text: 'PRIVATE_RESULT' }] }, { role: 'assistant', text: 'Existing answer', thinking: 'PRIVATE_THINKING' }]);
   assert.deepEqual(seed.map(item => item.role), ['user', 'assistant']);

@@ -25,7 +25,7 @@ function stream() {
   };
 }
 async function harness() {
-  const hooks = new Map(), timers = [], intervals = [], children = [], fetches = [], statuses = [], submits = [], commands = [], logs = [], appends = [], spawns = [];
+  const hooks = new Map(), timers = [], intervals = [], children = [], fetches = [], statuses = [], submits = [], commands = [], logs = [], appends = [], spawns = [], redraws = [], toasts = [];
   const on = (name, ...args) => hooks.set(name === 'command.run' ? name + ':' + args[0].command : name, args.at(-1));
   register(on);
   const timer = (ms, fn, list) => {
@@ -39,18 +39,19 @@ async function harness() {
     command: { register: async command => commands.push(command) },
     http: { fetch: async (url, init) => { fetches.push({ url, init }); if (url.endsWith('/shutdown')) children.at(-1)?.finish(); return { ok: true, text: JSON.stringify({ muted: true }) }; } },
     process: { run: async () => ({}), spawn: input => { spawns.push(input); const value = stream(); children.push(value); return value; } },
-    ui: { status: text => statuses.push(text), toast: () => {}, copy: async () => {}, log: text => logs.push(text), invalidate: () => {}, resolve: () => ({ Box: props => ({ type: 'Box', props }), Text: props => ({ type: 'Text', props }) }) },
+    ui: { status: text => statuses.push(text), toast: text => toasts.push(text), copy: async () => {}, log: text => logs.push(text), invalidate: name => redraws.push(name), resolve: () => ({ Box: props => ({ type: 'Box', props }), Text: props => ({ type: 'Text', props }) }) },
     prompt: { submit: async args => { submits.push(args); return args; } },
     session: { append: async args => { appends.push(args); return { uuid: 'row-' + appends.length }; }, messages: async () => [{ role: 'user', text: 'Existing task: fix the parser', toolUses: [] }] },
   };
   const next = async e => e;
   await hooks.get('session.start')($, {}, next);
   return {
-    $, hooks, timers, intervals, children, fetches, statuses, submits, commands, logs, appends, spawns,
+    $, hooks, timers, intervals, children, fetches, statuses, submits, commands, logs, appends, spawns, redraws, toasts,
+    render: () => hooks.get('ui.render')($, { component: 'AbovePrompt', props: { hasSurvey: false, maxRows: 4 } }, async () => null),
     command: (args, name = 'uvoice') => hooks.get('command.run:' + name)($, { args }, next),
     hook: (name, e, downstream = next) => hooks.get(name)($, e, downstream),
     kickoff() { const timer = timers.findLast(t => t.ms === 0 && !t.cancelled); const running = timer.fn(); void running.catch(() => {}); return running; },
-    timeout() { return timers.findLast(t => t.ms === 15000 && !t.cancelled).fn(); },
+    timeout() { return timers.findLast(t => t.ms === 240000 && !t.cancelled).fn(); },
   };
 }
 
@@ -74,7 +75,7 @@ test('stop before ready releases the outstanding process stream', async () => {
 test('startup timeout releases child and allows retry', async () => {
   const h = await harness(); const launching = h.command('start');
   const background = h.kickoff(); await tick(); h.timeout(); await background;
-  assert.match((await launching).text, /15 seconds/);
+  assert.match((await launching).text, /four minutes/);
   assert.equal(h.children[0].returned, 1);
   const retry = h.command('start'); h.kickoff(); await tick();
   h.children[1].push({ type: 'ready', port: 4567 });
@@ -117,11 +118,13 @@ test('stop immediately rejects new helper work even when transcript saving hangs
   h.children[0].push({ type: 'delegate', id: 'late', text: 'Must not run' }); await tick();
   assert.ok(h.fetches.some(f => f.url.endsWith('/shutdown')));
   assert.equal(h.submits.length, 0);
-  assert.deepEqual(h.logs, ['You: Preserve this constraint']);
+  assert.deepEqual(h.logs, []);
   await h.timers.findLast(t => t.ms === 1000 && !t.cancelled).fn();
   await stopping; await background;
   assert.equal(h.children[0].returned, 1);
+  assert.match(JSON.stringify(await h.render()), /You: Preserve this constraint/);
   resolveAppend({ uuid: 'late-save' }); await tick();
+  assert.equal(await h.render(), null, 'late successful save clears captions after voice stops');
   await h.hook('prompt.submit', { text: 'Typed follow-up', origin: { kind: 'composer' } });
   assert.equal(h.appends.length, 1, 'late successful save is not duplicated');
 });
@@ -188,7 +191,7 @@ test('late mute response cannot report success after voice stops', async () => {
   await background;
 });
 
-test('captions render in terminal while only delivered speech enters model context', async () => {
+test('captions stay temporary and clear as soon as their delegation is accepted', async () => {
   const h = await harness(); const launching = h.command('start'); h.kickoff(); await tick();
   h.children[0].push({ type: 'ready', port: 4567 }); await launching;
   h.children[0].push({ type: 'status', phase: 'listening' });
@@ -197,14 +200,113 @@ test('captions render in terminal while only delivered speech enters model conte
   assert.match(JSON.stringify(tree), /You: Fix the parser/);
   assert.equal(h.submits.length, 0); assert.equal(h.appends.length, 0);
   h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix the parser', final: true }); await tick();
-  assert.deepEqual(h.logs, ['You: Fix the parser']);
+  assert.deepEqual(h.logs, []);
+  assert.match(JSON.stringify(await h.render()), /You: Fix the parser/, 'finished speech stays visible until accepted');
+  const beforeAcceptance = h.redraws.length;
   h.children[0].push({ type: 'delegate', id: 'internal-id', text: 'Fix it', watermark: 1 }); await tick();
+  assert.equal(await h.render(), null);
+  assert.ok(h.redraws.length > beforeAcceptance, 'acceptance requests an immediate redraw');
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix the parser', final: true }); await tick();
+  assert.equal(await h.render(), null, 'a late final transcript cannot resurrect sent speech');
+  assert.deepEqual(h.logs, []);
   assert.equal(h.submits.length, 1);
   assert.match(h.submits[0].text, /Fix the parser/);
   assert.doesNotMatch(h.submits[0].text, /internal-id|Carry the user|delegated request/);
   await h.hook('prompt.submit', { text: 'Typed follow-up', origin: { kind: 'composer' } });
   assert.equal(h.appends.length, 0, 'accepted delegation committed this transcript exactly once');
   await h.command('stop');
+});
+
+async function startListening(h) {
+  const launching = h.command('start'); h.kickoff(); await tick();
+  h.children.at(-1).push({ type: 'ready', port: 4567 }); await launching;
+  h.children.at(-1).push({ type: 'status', phase: 'listening' }); await tick();
+}
+
+for (const mode of ['submit', 'append']) {
+  for (const failure of ['rejected', 'swallowed', 'error']) {
+    test(`${mode} ${failure} keeps unsent captions visible and available for recovery`, async () => {
+      const h = await harness(); await startListening(h);
+      if (mode === 'append') await h.hook('turn.start', { turnId: 'busy', text: 'Typed task' });
+      const result = async args => {
+        (mode === 'submit' ? h.submits : h.appends).push(args);
+        if (failure === 'error') throw new Error('Fixture failure');
+        return failure === 'rejected' ? { deny: 'Fixture rejection' } : {};
+      };
+      if (mode === 'submit') h.$.prompt.submit = result;
+      else h.$.session.append = result;
+      h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Keep the API', delta: 'Keep the API', sequence: 1, final: true });
+      h.children[0].push({ type: 'delegate', id: 'failed', text: 'Fix parser', watermark: 1 }); await tick();
+      assert.match(JSON.stringify(await h.render()), /You: Keep the API/);
+      assert.deepEqual(h.logs, []);
+      h.$.session.append = async args => { h.appends.push(args); return { uuid: 'recovery' }; };
+      await h.command('stop');
+      assert.match(h.appends.at(-1).message.content[0].text, /Keep the API/);
+      assert.equal(await h.render(), null, 'successful context save clears only the recovered speech');
+    });
+  }
+}
+
+test('partial acceptance keeps newer words of the same utterance while a submit is in flight', async () => {
+  const h = await harness(); await startListening(h);
+  let resolveSubmit;
+  h.$.prompt.submit = args => { h.submits.push(args); return new Promise(resolve => { resolveSubmit = () => resolve(args); }); };
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix parser', delta: 'Fix parser', sequence: 1 });
+  h.children[0].push({ type: 'delegate', id: 'first', text: 'Fix parser', watermark: 1 }); await tick();
+  assert.match(JSON.stringify(await h.render()), /You: Fix parser/);
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix parser and keep the API', delta: ' and keep the API', sequence: 2 }); await tick();
+  resolveSubmit(); await tick();
+  const tree = JSON.stringify(await h.render());
+  assert.match(tree, /You: and keep the API/);
+  assert.doesNotMatch(tree, /Fix parser/);
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix parser and keep the API', final: true }); await tick();
+  assert.doesNotMatch(JSON.stringify(await h.render()), /Fix parser/);
+  await h.command('stop');
+  assert.match(h.appends[0].message.content[0].text, /and keep the API/);
+  assert.doesNotMatch(h.appends[0].message.content[0].text, /Fix parser/);
+  assert.equal(await h.render(), null);
+  assert.deepEqual(h.logs, []);
+});
+
+test('busy append acceptance clears user and voice captions without hiding newer speech', async () => {
+  const h = await harness(); await startListening(h);
+  await h.hook('turn.start', { turnId: 'busy', text: 'Typed task' });
+  let resolveAppend;
+  h.$.session.append = args => { h.appends.push(args); return new Promise(resolve => { resolveAppend = resolve; }); };
+  h.children[0].push({ type: 'transcript', utteranceId: 'a1', role: 'A', text: 'What do you need?', delta: 'What do you need?', sequence: 1, final: true });
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Fix parser', delta: 'Fix parser', sequence: 2, final: true });
+  h.children[0].push({ type: 'delegate', id: 'busy-request', text: 'Fix parser', watermark: 2 }); await tick();
+  assert.match(JSON.stringify(await h.render()), /Voice: What do you need/);
+  h.children[0].push({ type: 'transcript', utteranceId: 'a2', role: 'A', text: 'Working on it', delta: 'Working on it', sequence: 3, final: true }); await tick();
+  const beforeAcceptance = h.redraws.length;
+  resolveAppend({ uuid: 'saved' }); await tick();
+  const tree = JSON.stringify(await h.render());
+  assert.match(tree, /Voice: Working on it/);
+  assert.doesNotMatch(tree, /Fix parser|What do you need/);
+  assert.ok(h.redraws.length > beforeAcceptance);
+  h.$.session.append = async () => ({ uuid: 'remaining' });
+  await h.command('stop');
+  assert.equal(await h.render(), null);
+  assert.deepEqual(h.logs, []);
+});
+
+test('unsaved captions survive stop and a failed reconnect instead of being erased', async () => {
+  const h = await harness(); await startListening(h);
+  h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Keep my constraint', delta: 'Keep my constraint', sequence: 1, final: true }); await tick();
+  h.$.session.append = async () => { throw new Error('Fixture save failure'); };
+  await h.command('stop');
+  assert.match(JSON.stringify(await h.render()), /Keep my constraint/);
+  assert.match(h.toasts.at(-1), /captions are still visible/);
+  const restarting = h.command('start'); h.kickoff(); await tick();
+  assert.match((await restarting).text, /Previous voice conversation has not been saved/);
+  assert.equal(h.children.length, 1, 'failed recovery does not spawn another call or reset its ledger');
+  assert.match(JSON.stringify(await h.render()), /Keep my constraint/);
+  h.$.session.append = async args => { h.appends.push(args); return { uuid: 'recovered' }; };
+  await startListening(h);
+  assert.match(h.appends[0].message.content[0].text, /Keep my constraint/);
+  assert.equal(await h.render(), null);
+  await h.command('stop');
+  assert.deepEqual(h.logs, []);
 });
 
 test('start and end instructions append only on transitions, with typed context saved once', async () => {
@@ -222,6 +324,7 @@ test('start and end instructions append only on transitions, with typed context 
   h.children[0].push({ type: 'transcript', utteranceId: 'u1', role: 'U', text: 'Keep the API', delta: 'Keep the API', sequence: 1 }); await tick();
   await h.hook('prompt.submit', input);
   assert.equal(h.appends.length, 1); assert.match(h.appends[0].message.content[0].text, /Keep the API/);
+  assert.equal(await h.render(), null, 'saving voice context before typed input also clears captions');
   await h.hook('prompt.submit', input); assert.equal(h.appends.length, 1);
   await h.command('stop');
   const after = await h.hook('prompt.submit', input);

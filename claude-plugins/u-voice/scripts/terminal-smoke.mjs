@@ -19,7 +19,7 @@ await mkdir(resolve(observer, 'hooks'), { recursive: true });
 await mkdir(resolve(observer, '.claude-plugin'), { recursive: true });
 await writeFile(resolve(work, 'note.txt'), 'The color is BLUE.\n');
 const token = randomBytes(32).toString('hex');
-const evidence = { startedAt: new Date().toISOString(), checks: {}, finals: [], captions: { user: 0, voice: 0, voiceSaysBlue: false }, requestedModel: 'sonnet', mainModels: [], usageModels: [], costUsd: 0 };
+const evidence = { startedAt: new Date().toISOString(), checks: {}, finals: [], captions: { user: 0, voice: 0, voiceSaysBlue: false, permanentLogs: 0 }, requestedModel: 'sonnet', mainModels: [], usageModels: [], costUsd: 0 };
 let child, state, buffer = '', exitCode, stderrBytes = 0, stage = 'prepare';
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms));
 const deadline = Date.now() + 90_000;
@@ -30,6 +30,7 @@ const observe = createServer(async (request, response) => {
     if (event.text.startsWith('You:')) evidence.captions.user++;
     if (event.text.startsWith('Voice:')) { evidence.captions.voice++; if (/blue/i.test(event.text)) evidence.captions.voiceSaysBlue = true; }
   }
+  if (event.type === 'permanent-caption') evidence.captions.permanentLogs++;
   if (event.type === 'final') evidence.finals.push(event);
   response.end('{}');
 });
@@ -38,8 +39,30 @@ const sink = 'http://127.0.0.1:' + observe.address().port;
 await writeFile(resolve(observer, '.claude-plugin/plugin.json'), '{"name":"terminal-fixture-observer"}');
 await writeFile(resolve(observer, 'hooks/hooks.json'), '{"modules":["./register.js"]}');
 await writeFile(resolve(observer, 'hooks/register.js'), `export function register(on) {
+  // Print mode has no terminal render loop; native tests cover AbovePrompt.
+  // Observe helper transcripts arriving at the plugin, not permanent UI logs.
+  on('process.spawn', async function* ($, e, next) {
+    const stream = next(e);
+    let buffer = '';
+    try {
+      while (true) {
+        const item = await stream.next();
+        if (item.done) return item.value;
+        if (item.value.stream === 'stdout' && typeof item.value.text === 'string') {
+          buffer += item.value.text;
+          let end;
+          while ((end = buffer.indexOf('\\n')) >= 0) {
+            const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+            let event; try { event = JSON.parse(line); } catch { continue; }
+            if (event.type === 'transcript' && event.final) await $.http.fetch(${JSON.stringify(sink)}, { method: 'POST', body: JSON.stringify({ type: 'caption', text: (event.role === 'U' ? 'You: ' : 'Voice: ') + event.text }) });
+          }
+        }
+        yield item.value;
+      }
+    } finally { await stream.return?.(); }
+  });
   on('ui.log', async ($, e, next) => {
-    if (/^(You|Voice):/.test(e.text)) await $.http.fetch(${JSON.stringify(sink)}, { method: 'POST', body: JSON.stringify({ type: 'caption', text: e.text }) });
+    if (/^(You|Voice):/.test(e.text)) await $.http.fetch(${JSON.stringify(sink)}, { method: 'POST', body: JSON.stringify({ type: 'permanent-caption' }) });
     return next(e);
   });
   on('http.fetch', async ($, e, next) => {
@@ -101,8 +124,8 @@ try {
   evidence.checks.voiceDelegationReadFixture = state.agentEvents.some(e => e.kind === 'tool' && e.tool === 'Read' && e.status === 'completed');
   evidence.checks.voiceResultSpeakable = true;
   stage = 'captions'; await waitFor(() => evidence.captions.voiceSaysBlue, 20_000);
-  evidence.checks.userCaptionReachedTerminal = evidence.captions.user > 0;
-  evidence.checks.spokenAnswerCaptionReachedTerminal = evidence.captions.voiceSaysBlue;
+  evidence.checks.userTranscriptReachedPlugin = evidence.captions.user > 0;
+  evidence.checks.spokenAnswerTranscriptReachedPlugin = evidence.captions.voiceSaysBlue;
   command('/m'); stage = 'mute'; await waitFor(() => state?.status?.microphoneMuted, 5000); evidence.checks.mute = true;
   command('Reply exactly TEXT_OK. This typed request should be answered normally.');
   stage = 'typed'; await waitFor(() => evidence.finals.some(f => f.typedMarker && !f.speak && f.requestCount === 0), 15_000); evidence.checks.typedReplySilent = true;
@@ -114,6 +137,7 @@ try {
     await pause(200);
   }
   evidence.checks.stop = gone;
+  evidence.checks.noPermanentCaptionLogs = evidence.captions.permanentLogs === 0;
 } catch (error) {
   evidence.failure = { stage, code: /^(timeout_|claude_exited|voice_error)/.test(error.message) ? error.message : 'driver_error' };
   if (state?.status?.phase === 'error') evidence.failure.message = state.status.message;

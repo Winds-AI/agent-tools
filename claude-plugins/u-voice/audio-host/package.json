@@ -1,0 +1,6 @@
+{
+  "name": "uvoice-audio-host",
+  "version": "0.4.0",
+  "private": true,
+  "main": "main.cjs"
+}

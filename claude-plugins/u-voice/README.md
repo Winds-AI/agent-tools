@@ -12,7 +12,7 @@ Restart Claude Code after installation, then run:
 /v
 ```
 
-Voice connects automatically. Wait for **Voice: Listening** in the terminal, then speak. For example: “Read the README and explain how this project works.” A dedicated hidden browser handles audio; no browser tab or panel needs your attention.
+Voice connects automatically. On first use, U-voice downloads a pinned Electron audio runtime into your user cache, verifies its checksum, and starts it invisibly. Wait for **Voice: Listening** in the terminal, then speak. For example: “Read the README and explain how this project works.” No browser tab or panel needs your attention.
 
 - `/v` toggles voice on/off, including cancelling a connection in progress. Claude keeps working when voice stops.
 - `/m` toggles microphone mute. Replies remain audible and Claude keeps working.
@@ -21,7 +21,7 @@ Voice connects automatically. Wait for **Voice: Listening** in the terminal, the
 
 These controls run immediately even while Claude is working and do not invoke an AI model. Connection and microphone errors appear in the terminal. `/uvoice open` and `/uvoice url` provide optional browser diagnostics; normal use needs neither.
 
-Live captions appear above the terminal prompt; finished speech is logged once as **You:** or **Voice:**. You can start voice in a normal text session, type while voice is running, and turn voice off while Claude keeps working. Voice-requested results are spoken; typed replies stay silent by default. New spoken or typed input suppresses an older result that has not yet been sent for speech.
+Live captions appear temporarily above the terminal prompt as **You:** or **Voice:**. They disappear once Claude accepts the corresponding transcript in a submitted message or context note; speech that is still pending or could not be saved stays visible. Finished speech is not logged separately in the conversation. You can start voice in a normal text session, type while voice is running, and turn voice off while Claude keeps working. Voice-requested results are spoken; typed replies stay silent by default. New spoken or typed input suppresses an older result that has not yet been sent for speech.
 
 Start Claude yourself in your usual bypass mode. The plugin attaches to that session and has no approval or permission-mode management.
 
@@ -29,7 +29,7 @@ Start Claude yourself in your usual bypass mode. The plugin attaches to that ses
 
 Tested against Claude Code **2.1.289** and Node **24**. Node 22 or newer is required. The plugin uses Claude's native JavaScript mods, including `session.append`; an older Claude release may lack the required API.
 
-Both Claude Code and Codex must already be signed in. The helper reads `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and uses the installed Codex client version. OAuth credentials stay in the helper; the browser receives the WebRTC session description and a temporary localhost bridge token.
+Both Claude Code and Codex must already be signed in. The helper reads `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and uses the installed Codex client version. OAuth credentials stay in the Node helper; the hidden Electron audio host receives only the WebRTC session description and a temporary localhost bridge token.
 
 Clone the repository and enter the plugin directory:
 
@@ -46,9 +46,9 @@ For development without installation:
 claude --plugin-dir "$PWD"
 ```
 
-On WSL, the helper runs in Linux and launches an isolated, invisible Windows Chrome process (Edge is the fallback). It uses your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone. The browser has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. Native Windows also uses this audio host. Linux requires Chrome/Chromium and `setsid`.
+On WSL, the helper runs in Linux and launches the Windows Electron audio host so it can use your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone, and WSL localhost forwarding must be available. Native macOS, Windows and Linux use the matching Electron runtime for their platform. Linux requires a normal desktop display and working user audio service; bare SSH/headless servers are not a supported audio target.
 
-The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
+The Electron runtime is roughly 120–180 MB compressed depending on platform and is cached after the first `/v`. It has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
 
 Optional environment variables:
 
@@ -57,7 +57,7 @@ Optional environment variables:
 | `UVOICE_CODEX_AUTH_FILE` | Override the Codex auth-file path. |
 | `UVOICE_NODE` | Override the Node executable used by the mod. |
 | `UVOICE_CODEX_VERSION` | Explicit Codex client version if `codex` is unavailable on PATH. |
-| `UVOICE_BROWSER` | Override the dedicated Chrome/Edge executable. |
+| `UVOICE_CACHE_DIR` | Override the Electron runtime cache directory on native macOS/Linux/Windows. |
 
 ## How steering works
 
@@ -86,13 +86,13 @@ The optional live steering check uses your Claude subscription with Haiku, low e
 node scripts/claude-smoke.mjs
 ```
 
-The terminal check uses Sonnet at low effort with a $0.20 reported-cost cap. Supply synthetic speech asking to read `note.txt` and report its color. It starts the hidden audio host with `/v`, checks both terminal caption directions, verifies a silent typed reply, and tests `/m` and `/v` teardown:
+The terminal check uses Sonnet at low effort with a $0.20 reported-cost cap. Supply synthetic speech asking to read `note.txt` and report its color. It starts the hidden audio host with `/v`, checks both transcript directions reaching the plugin without permanent caption logs, verifies a silent typed reply, and tests `/m` and `/v` teardown:
 
 ```sh
 UVOICE_SMOKE_WAV=/absolute/path/synthetic-speech.wav node scripts/terminal-smoke.mjs
 ```
 
-The voice check requires a **synthesized speech WAV**, never a real microphone. Its utterance should ask Claude to read `note.txt` and report its color. It creates that test file under `.scratch/`, uses a separate browser session, and closes the voice connection after the check:
+The voice page check remains available for optional browser diagnostics. It requires a **synthesized speech WAV**, never a real microphone. Its utterance should ask Claude to read `note.txt` and report its color. It creates that test file under `.scratch/`, uses a separate browser session, and closes the voice connection after the check:
 
 ```sh
 UVOICE_SMOKE_WAV=/absolute/path/synthetic-speech.wav \

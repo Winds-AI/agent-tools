@@ -17,6 +17,7 @@ export function register(on) {
   const transcriptNotes = new Map();
   let captions = [];
   const maxEvents = 160;
+  const startupTimeoutMs = 240000;
 
   function emit(event) {
     if (event.kind === 'delivery' || event.kind === 'context-delivery') {
@@ -24,6 +25,7 @@ export function register(on) {
       if (saved && (['accepted', 'observed'].includes(event.state) || event.accepted === true)) {
         event.watermark = saved.ledger.commit(saved.note);
         transcriptNotes.delete(event.requestId);
+        if (saved.ledger === transcript) runtime.redraw();
       } else if (saved && !event.pendingWrite && (['denied', 'cancelled'].includes(event.state) || event.accepted === false)) {
         saved.ledger.release(saved.note);
         transcriptNotes.delete(event.requestId);
@@ -44,14 +46,9 @@ export function register(on) {
     transcript.add(event);
     if (typeof event.utteranceId !== 'string' || typeof event.text !== 'string') return;
     const row = captions.find(c => c.id === event.utteranceId);
-    if (row) { row.text = event.text; row.final = Boolean(event.final); }
-    else captions.push({ id: event.utteranceId, role: event.role, text: event.text, final: Boolean(event.final) });
+    if (row) row.final = Boolean(event.final);
+    else captions.push({ id: event.utteranceId, final: Boolean(event.final) });
     captions = captions.slice(-4);
-    if (event.final && !row?.logged) {
-      const current = captions.find(c => c.id === event.utteranceId);
-      current.logged = true;
-      runtime.log((event.role === 'U' ? 'You: ' : 'Voice: ') + event.text.trim());
-    }
     runtime.redraw();
   }
 
@@ -63,7 +60,10 @@ export function register(on) {
     const flight = (async () => {
       try {
         const result = await runtime.append({ message: { type: 'user', content: [{ type: 'text', text: 'Voice conversation:\n' + note.text }] } });
-        if (result?.uuid) { const watermark = ledger.commit(note); if (ledger === transcript) emit({ kind: 'context', watermark }); }
+        if (result?.uuid) {
+          const watermark = ledger.commit(note);
+          if (ledger === transcript) { runtime.redraw(); emit({ kind: 'context', watermark }); }
+        }
         else { ledger.release(note); throw new Error('Voice conversation was not saved.'); }
       } catch (error) { ledger.release(note); throw error; }
     })();
@@ -122,7 +122,7 @@ export function register(on) {
     const stamp = ++generation;
     phase = 'starting';
     const token = runtime.bridgeToken || Array.from(crypto.getRandomValues(new Uint8Array(24)), x => x.toString(16).padStart(2, '0')).join('');
-    const env = { UVOICE_BRIDGE_TOKEN: token, ...(runtime.authFile ? { UVOICE_CODEX_AUTH_FILE: runtime.authFile } : {}), ...(runtime.port ? { UVOICE_PORT: runtime.port } : {}), ...(runtime.browser ? { UVOICE_BROWSER: runtime.browser } : {}), ...(runtime.syntheticWav ? { UVOICE_TEST_AUDIO_WAV: runtime.syntheticWav } : {}) };
+    const env = { UVOICE_BRIDGE_TOKEN: token, ...(runtime.authFile ? { UVOICE_CODEX_AUTH_FILE: runtime.authFile } : {}), ...(runtime.port ? { UVOICE_PORT: runtime.port } : {}), ...(runtime.syntheticWav ? { UVOICE_TEST_AUDIO_WAV: runtime.syntheticWav } : {}) };
     const task = { stamp, token, mode, settled: false, released: false };
     task.closed = new Promise(resolve => { task.resolveClosed = resolve; });
     const ready = new Promise((resolve, reject) => { task.resolve = resolve; task.reject = reject; });
@@ -131,19 +131,27 @@ export function register(on) {
     void ready.catch(() => {});
     starting = ready;
     child = task;
-    task.timeout = runtime.after(15000, () => {
+    task.timeout = runtime.after(startupTimeoutMs, () => {
       if (task.settled || child !== task || stamp !== generation) return;
       generation++;
       child = undefined; starting = undefined; phase = 'error';
       controller?.cancelPending();
-      settleReady(task, new Error('Voice helper did not start within 15 seconds.'));
+      settleReady(task, new Error('Voice setup did not finish within four minutes.'));
       releaseChild(task);
-      runtime.status('Voice helper startup timed out. Use /uvoice to retry.');
+      runtime.status('Voice setup timed out. Use /uvoice to retry.');
     });
     task.kickoff = runtime.after(0, async () => {
       if (child !== task || stamp !== generation || task.released) return;
       let buffer = '';
+      let savingPrevious = false;
       try {
+        // Do not erase unsaved captions when reconnecting after a failed save.
+        if (transcript.pendingCaptions().length) {
+          savingPrevious = true;
+          await syncTranscript();
+          if (transcript.pendingCaptions().length) throw new Error('Voice context is still pending.');
+          savingPrevious = false;
+        }
         let seed = [];
         try { seed = seedHistory(await runtime.messages()); } catch { /* Project questions can still be delegated. */ }
         if (child !== task || stamp !== generation || task.released) return;
@@ -178,6 +186,9 @@ export function register(on) {
               addTranscript(event);
             } else if (event.type === 'input') {
               controller.input('voice');
+            } else if (event.type === 'host.progress' || event.type === 'host.permission' || event.type === 'host.starting') {
+              const message = String(event.message || (event.type === 'host.starting' ? 'Starting hidden audio host…' : 'Setting up audio…')).replace(/\s+/g, ' ').slice(0, 160);
+              runtime.status('Voice setup: ' + message + ' · /v stop');
             } else if (event.type === 'status') {
               phase = event.phase;
               instructions.set(['listening', 'muted'].includes(event.phase));
@@ -200,8 +211,9 @@ export function register(on) {
           child = undefined; helper = undefined; starting = undefined; phase = 'error'; timer?.cancel();
           controller?.cancelPending();
           instructions.set(false); runtime.redraw();
-          settleReady(task, new Error('Could not start the voice helper. Node.js 22 or newer is required.'));
-          runtime.toast('Could not start the voice helper.');
+          const message = savingPrevious ? 'Previous voice conversation has not been saved yet. Its captions are still visible; retry /v.' : 'Could not start the voice helper. Node.js 22 or newer is required.';
+          settleReady(task, new Error(message));
+          runtime.toast(savingPrevious ? message : 'Could not start the voice helper.');
         }
       } finally { releaseChild(task); task.resolveClosed(); }
     });
@@ -217,11 +229,6 @@ export function register(on) {
     child = undefined; helper = undefined; phase = 'off'; queue = []; starting = undefined; outgoing = undefined;
     instructions.set(false); runtime.redraw();
     controller?.cancelPending();
-    if (old) {
-      for (const row of captions) if (!row.logged && row.text.trim()) {
-        runtime.log((row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim()); row.logged = true; row.final = true;
-      }
-    }
     if (task) settleReady(task, new Error('Voice startup was cancelled.'));
     // Ask a ready helper to close the browser call, then release its process.
     // A hung HTTP response must not hold the command or child indefinitely.
@@ -234,7 +241,7 @@ export function register(on) {
     // Saving context shares the teardown deadline. New helper events are already
     // invalidated, and a late successful append keeps ownership of its ledger.
     const drain = old ? syncTranscript().catch(() => {
-      runtime.toast('Some voice conversation could not be saved; it remains visible in the terminal.');
+      runtime.toast('Some voice conversation could not be saved; its captions are still visible.');
     }) : Promise.resolve();
     const deadline = new Promise(resolve => { shutdownTimeout = runtime.after(1000, resolve); });
     const gracefullyClosed = shutdown.then(() => old && task?.mode === 'hidden' && task.stream ? task.closed : undefined);
@@ -250,7 +257,6 @@ export function register(on) {
       bridgeToken: await $.env.get('UVOICE_BRIDGE_TOKEN'),
       authFile: await $.env.get('UVOICE_CODEX_AUTH_FILE'),
       port: await $.env.get('UVOICE_PORT'),
-      browser: await $.env.get('UVOICE_BROWSER'),
       syntheticWav: await $.env.get('UVOICE_TEST_AUDIO_WAV'),
       fetch: (url, init) => $.http.fetch(url, init),
       run: argv => $.process.run(argv),
@@ -259,7 +265,6 @@ export function register(on) {
       every: (ms, fn) => $.clock.every(ms, fn),
       status: text => $.ui.status(text),
       toast: text => $.ui.toast(text),
-      log: text => $.ui.log(text),
       redraw: () => $.ui.invalidate('ui.render'),
       messages: () => $.session.messages(),
       append: args => $.session.append(args),
@@ -323,10 +328,11 @@ export function register(on) {
   });
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || ['off', 'error', 'idle'].includes(phase) || !captions.length) return next(e);
+    const pending = transcript.pendingCaptions().filter(row => row.text.trim());
+    if (e.props.hasSurvey || !pending.length) return next(e);
     const { Box, Text } = $.ui.resolve(e);
-    const rows = captions.slice(-Math.max(1, Math.min(3, e.props.maxRows - 1)));
-    return Box({ flexDirection: 'column', children: [await next(e), ...rows.map(row => Text({ dimColor: row.final, wrap: 'truncate-end', children: (row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim() }))] });
+    const rows = pending.slice(-Math.max(1, Math.min(3, e.props.maxRows - 1)));
+    return Box({ flexDirection: 'column', children: [await next(e), ...rows.map(row => Text({ dimColor: Boolean(captions.find(c => c.id === row.utteranceId)?.final), wrap: 'truncate-end', children: (row.role === 'U' ? 'You: ' : 'Voice: ') + row.text.trim() }))] });
   });
   on('prompt.submit', async ($, e, next) => {
     const token = controller?.prompt(e, $.plugin.name);

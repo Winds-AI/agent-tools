@@ -1,85 +1,88 @@
-import { spawn, execFile } from 'node:child_process';
-import { mkdtemp, access, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { ensureElectronRuntime } from './electron-runtime.mjs';
+import { audioEnvironment, detectAudioTarget, hostPath, prepareAudioFiles } from './audio-platform.mjs';
 
-const runFile = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 
-async function windowsPath(path) {
-  if (process.platform === 'win32') return path;
-  return (await runFile('wslpath', ['-w', path], { timeout: 3000 })).stdout.trim();
-}
-
-export async function launchAudioHost(url, { browser = process.env.UVOICE_BROWSER, syntheticWav = process.env.UVOICE_TEST_AUDIO_WAV } = {}) {
+export async function launchAudioHost(url, {
+  syntheticWav = process.env.UVOICE_TEST_AUDIO_WAV,
+  cacheRoot,
+  signal,
+  onEvent = () => {},
+} = {}) {
   if (!/^http:\/\/127\.0\.0\.1:\d+\/#token=[a-zA-Z0-9_%.-]+$/.test(url)) throw new Error('Invalid local audio address.');
-  let child, profile;
-  const wsl = !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
-  try {
-    if (wsl || process.platform === 'win32') {
-      const script = await windowsPath(join(here, 'audio-host.ps1'));
-      child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
-      child.stdin.on('error', () => {});
-      child.stdin.write(JSON.stringify({ url, browser: browser ? (browser.startsWith('/') ? await windowsPath(browser) : browser) : undefined, syntheticWav: syntheticWav ? await windowsPath(resolve(syntheticWav)) : undefined }) + '\n');
-    } else {
-      if (process.platform !== 'linux') throw new Error('Background voice currently supports Windows, WSL and Linux.');
-      if (!browser) {
-        for (const candidate of ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge']) {
-          try { await access(candidate); browser = candidate; break; } catch {}
-        }
-      }
-      if (!browser) throw new Error('Set UVOICE_BROWSER to your Chrome or Chromium executable.');
-      profile = await mkdtemp(join(tmpdir(), 'uvoice-'));
-      const flags = ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-sync', '--disable-component-update', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--user-data-dir=' + profile];
-      if (syntheticWav) flags.push('--use-fake-device-for-media-stream', '--use-file-for-fake-audio-capture=' + resolve(syntheticWav) + '%noloop');
-      flags.push(url);
-      child = spawn('bash', [join(here, 'audio-host.sh'), browser, profile, ...flags], { stdio: ['pipe', 'pipe', 'ignore'] });
-      child.stdin.on('error', () => {});
-    }
-    let stopped = false;
-    const closed = new Promise(resolve => child.once('close', resolve));
-    const ready = new Promise((resolve, reject) => {
-      let buffer = '';
-      const timeout = setTimeout(() => reject(new Error('Background audio startup timed out.')), 15000);
-      const finish = (error) => { clearTimeout(timeout); error ? reject(error) : resolve(); };
-      child.once('error', () => finish(new Error('Could not start the background audio host.')));
-      child.once('close', () => finish(new Error('Background audio host exited.')));
-      child.stdout.on('data', chunk => {
-        buffer += chunk;
-        if (buffer.length > 64_000) { finish(new Error('Invalid audio host response.')); return; }
-        let end;
-        while ((end = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-          try { const item = JSON.parse(line); if (item.type === 'host.ready') finish(); else if (item.type === 'host.error') finish(new Error('Could not run background audio. Chrome or Edge and microphone access are required.')); } catch {}
-        }
-      });
-    });
-    const stop = async () => {
-      if (stopped) return; stopped = true;
-      child.stdin.end('stop\n');
-      let timer;
-      await Promise.race([closed, new Promise(resolve => { timer = setTimeout(() => { child.kill('SIGTERM'); resolve(); }, 2000); })]);
-      clearTimeout(timer);
-      if (profile) await rm(profile, { recursive: true, force: true });
+  let child, files, stopped = false;
+  const target = await detectAudioTarget({ signal });
+  const runtime = await ensureElectronRuntime({
+    platform: target.platform,
+    arch: target.arch,
+    cacheRoot: cacheRoot ?? target.cacheRoot,
+    signal,
+    onProgress: event => onEvent({ type: 'host.progress', ...event }),
+  });
+  files = await prepareAudioFiles(runtime.runtimeDir, target, { syntheticWav, signal });
+  const application = await hostPath(files.application, target, { signal });
+  const config = {
+    url,
+    profilePath: await hostPath(files.profilePath, target, { signal }),
+    ...(files.wav ? { syntheticWav: await hostPath(files.wav, target, { signal }), suppressTestPlayback: true } : {}),
+  };
+  child = spawn(runtime.executablePath, [application], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: audioEnvironment() });
+  child.stdin.on('error', () => {});
+  child.stdin.write(JSON.stringify(config) + '\n');
+  const closed = new Promise(resolve => child.once('close', resolve));
+  const stop = async () => {
+    if (stopped) return; stopped = true;
+    try { child?.stdin.end('stop\n'); } catch {}
+    let timer;
+    await Promise.race([closed, new Promise(resolve => { timer = setTimeout(() => { child?.kill('SIGTERM'); resolve(); }, 3000); })]);
+    clearTimeout(timer);
+    if (files?.profilePath) await rm(files.profilePath, { recursive: true, force: true });
+  };
+  const ready = new Promise((resolve, reject) => {
+    let buffer = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Background audio startup timed out.'));
+    }, 120000);
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      error ? reject(error) : resolve();
     };
-    try { await ready; } catch (error) { await stop(); throw error; }
-    return { stop, closed, hidden: true };
-  } catch (error) {
-    if (child) { child.stdin.end(); child.kill('SIGTERM'); }
-    if (profile) await rm(profile, { recursive: true, force: true });
-    throw error;
-  }
+    child.once('error', () => finish(new Error('Could not start the Electron audio host.')));
+    child.once('close', () => finish(new Error('Background audio host exited.')));
+    child.stdout.on('data', chunk => {
+      buffer += chunk;
+      if (buffer.length > 128_000) { finish(new Error('Invalid audio host response.')); return; }
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+        let item; try { item = JSON.parse(line); } catch { continue; }
+        if (item?.type) onEvent(item);
+        if (item.type === 'host.ready') finish();
+        else if (item.type === 'host.error') finish(new Error(item.message || 'Could not run background audio.'));
+      }
+    });
+  });
+  try { await ready; } catch (error) { await stop(); throw error; }
+  return { stop, closed, hidden: true };
 }
 
 async function main() {
-  let helper, audio, closing = false, startup, base, connectionDeadline;
+  let helper, audio, closing = false, startup, base, connectionDeadline, audioAbort;
   const token = process.env.UVOICE_BRIDGE_TOKEN;
   if (!token || token.length < 24) { process.exitCode = 1; return; }
   const output = event => process.stdout.write(JSON.stringify(event) + '\n');
   const stop = async () => {
     if (closing) return; closing = true;
+    audioAbort?.abort();
     clearTimeout(connectionDeadline);
     if (base) {
       try { await fetch(base + '/shutdown', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(500) }); } catch {}
@@ -106,7 +109,7 @@ async function main() {
         base = 'http://127.0.0.1:' + event.port;
         connectionDeadline = setTimeout(() => {
           if (closing) return;
-          output({ type: 'error', message: 'Voice connection timed out. Check Windows microphone access and WSL localhost forwarding, then retry /v.' });
+          output({ type: 'error', message: 'Voice connection timed out. Check microphone permission and local network access, then retry /v.' });
           process.exitCode = 1;
           void stop();
         }, 60000);
@@ -114,7 +117,8 @@ async function main() {
           const control = await fetch(base + '/control', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'connect' }), signal: AbortSignal.timeout(3000) });
           if (!control.ok) throw new Error('Could not start voice.');
           if (closing) return;
-          const acquired = await launchAudioHost(base + '/#token=' + encodeURIComponent(token));
+          audioAbort = new AbortController();
+          const acquired = await launchAudioHost(base + '/#token=' + encodeURIComponent(token), { signal: audioAbort.signal, onEvent: output });
           if (closing) { await acquired.stop(); return; }
           audio = acquired;
           void audio.closed.then(() => { if (!closing) { output({ type: 'error', message: 'Background audio stopped. Use /v to reconnect.' }); void stop(); } });
