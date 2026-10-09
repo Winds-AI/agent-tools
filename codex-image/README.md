@@ -20,8 +20,8 @@ node codex-image.mjs "a tiny paper robot on a desk" --quality low --out assets/r
 | Argument | Meaning |
 |---|---|
 | `<prompt>` | Required, exactly one; any non-flag argument. Multi-line is fine when quoted |
-| `--image <path>` | Reference image (PNG, JPEG, WebP), repeatable; "image 1", "image 2"… in the order given |
-| `--quality <auto\|low\|medium\|high>` | Default `auto`; `low` is fastest |
+| `--image <path>` | Reference image (PNG, JPEG or WebP, up to 50 MB), repeatable; "image 1", "image 2"… in the order given |
+| `--quality <auto\|low\|medium\|high>` | Default `auto` |
 | `--out <path>` | Output path (folders created, file replaced). Default: a temp file |
 
 Prints only the PNG's absolute path on stdout. Errors: one `Error: ...` line on

@@ -13,6 +13,8 @@ const API_BASE = "https://chatgpt.com/backend-api/codex/images";
 const MODEL = "gpt-image-2";
 const QUALITIES = new Set(["auto", "low", "medium", "high"]);
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+// The edits endpoint accepts references up to 50 MiB; larger ones come back as a misleading moderation_block.
+const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 
 const HELP = `Usage: node codex-image.mjs <prompt> [--image <path>]... [--quality <q>] [--out <path>]
 
@@ -24,9 +26,9 @@ Modes (picked from the arguments):
 A prompt is always required, also with --image.
 
 Options:
-  --image <path>   Reference image (PNG, JPEG or WebP). Repeat for several; refer to them in the
+  --image <path>   Reference image (PNG, JPEG or WebP, up to 50 MB). Repeat for several; refer to them in the
                    prompt as "image 1", "image 2" in the order given.
-  --quality <q>    auto | low | medium | high (default: auto). low is fastest.
+  --quality <q>    auto | low | medium | high (default: auto).
   --out <path>     Where to write the PNG (parent folders are created; existing file is replaced).
                    Default: a new temp file.
   -h, --help       Show this help.
@@ -34,7 +36,7 @@ Options:
 Output: on success, prints only the absolute path of the PNG to stdout and exits 0.
 Errors: one "Error: ..." line on stderr; exit 2 for bad arguments, 1 for everything else.
 
-Notes: one image per call, usually 15-60 s. Size and aspect ratio are chosen by the model; describe
+Notes: one image per call. Size and aspect ratio are chosen by the model; describe
 the shape you want in the prompt ("wide 16:9 landscape"). Ask for "transparent background" in the
 prompt to get a PNG with alpha. Uses your Codex login and quota (run \`codex login\` first).`;
 
@@ -119,10 +121,10 @@ async function loadImages(paths) {
       throw new UsageError(`Image not found: ${path}`);
     }
     if (!info.isFile()) throw new UsageError(`Not a file: ${path}`);
-    if (info.size > MAX_IMAGE_BYTES) throw new UsageError(`Image is larger than 32 MB: ${path}`);
+    if (info.size > MAX_INPUT_BYTES) throw new UsageError(`Image is larger than the API's 50 MB limit: ${path}`);
     const bytes = await readFile(path);
     const mime = imageMime(bytes);
-    if (!mime) throw new UsageError(`Unsupported image type: ${path}. Use PNG, JPEG or WebP.`);
+    if (!mime) throw new UsageError(`Unsupported image type: ${path}. The API accepts PNG, JPEG or WebP only.`);
     refs.push({ image_url: `data:${mime};base64,${bytes.toString("base64")}` });
   }
   return refs;
