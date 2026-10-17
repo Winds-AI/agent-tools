@@ -1,6 +1,6 @@
 # Agent Tools
 
-Standalone tools, Claude Code plugins, and Pi resources maintained by Winds AI.
+Standalone tools, Claude Code and OpenCode plugins, and Pi resources maintained by Winds AI.
 
 ## Claude Code plugins
 
@@ -11,6 +11,16 @@ Claude Code plugins are grouped under [`claude-plugins`](claude-plugins). Each p
 | U-voice | [`claude-plugins/u-voice`](claude-plugins/u-voice) | Voice mode in the existing Claude Code thread, with terminal captions and `/v` and `/m` controls |
 
 See the [U-voice README](claude-plugins/u-voice/README.md) for requirements and installation.
+
+## OpenCode plugins
+
+OpenCode plugins are grouped under [`opencode-plugins`](opencode-plugins). Each one is a local OpenCode 2.x plugin directory to link into `~/.config/opencode/plugins/`.
+
+| Plugin | Path | Purpose |
+| --- | --- | --- |
+| U-voice | [`opencode-plugins/u-voice`](opencode-plugins/u-voice) | Voice mode in the open OpenCode session, with captions, steering while it works, and `/v` and `/m` controls |
+
+See the [U-voice for OpenCode README](opencode-plugins/u-voice/README.md) for requirements and installation.
 
 ## Pi extensions
 
