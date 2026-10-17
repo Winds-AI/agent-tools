@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureElectronRuntime } from './electron-runtime.mjs';
@@ -30,7 +30,14 @@ export async function launchAudioHost(url, {
     profilePath: await hostPath(files.profilePath, target, { signal }),
     ...(files.wav ? { syntheticWav: await hostPath(files.wav, target, { signal }), suppressTestPlayback: true } : {}),
   };
-  child = spawn(runtime.executablePath, [application], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: audioEnvironment() });
+  const args = [application];
+  if (target.wsl) {
+    // Over WSL interop the Windows host never receives stdin; see audio-host/main.cjs.
+    const file = join(files.profilePath, 'config.json');
+    await writeFile(file, JSON.stringify(config), { mode: 0o600 });
+    args.push('--uvoice-config=' + await hostPath(file, target, { signal }));
+  }
+  child = spawn(runtime.executablePath, args, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: audioEnvironment() });
   child.stdin.on('error', () => {});
   child.stdin.write(JSON.stringify(config) + '\n');
   const closed = new Promise(resolve => child.once('close', resolve));
@@ -40,7 +47,9 @@ export async function launchAudioHost(url, {
     let timer;
     await Promise.race([closed, new Promise(resolve => { timer = setTimeout(() => { child?.kill('SIGTERM'); resolve(); }, 3000); })]);
     clearTimeout(timer);
-    if (files?.profilePath) await rm(files.profilePath, { recursive: true, force: true });
+    // On WSL the Windows host may still hold its profile for a moment after the
+    // helper stops; it exits by itself, and a locked leftover is harmless.
+    if (files?.profilePath) await rm(files.profilePath, { recursive: true, force: true }).catch(() => {});
   };
   const ready = new Promise((resolve, reject) => {
     let buffer = '';

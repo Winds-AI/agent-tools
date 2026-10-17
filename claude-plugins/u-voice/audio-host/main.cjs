@@ -1,6 +1,7 @@
 // A private, never-shown Chromium renderer. The parent owns authentication and
 // passes only a temporary localhost URL over stdin, never on the command line.
-const { app, BrowserWindow, session, systemPreferences } = require('electron');
+const { app, BrowserWindow, net, session, systemPreferences } = require('electron');
+const { readFileSync, rmSync } = require('node:fs');
 const { join } = require('node:path');
 const { parseConfiguration, sameOrigin, allowMedia, windowOptions } = require('./policy.cjs');
 
@@ -22,6 +23,11 @@ let closing = false;
 let configured = false;
 let input = '';
 let configurationDeadline;
+// Windows Electron launched from WSL gets end-of-file on stdin at once and
+// outlives a kill of its WSL-side proxy. There the parent passes the
+// configuration in a private file, and the host exits when the helper stops
+// answering instead of waiting for stdin.
+const configArgument = process.argv.find(arg => arg.startsWith('--uvoice-config='));
 const emit = event => {
   if (!process.stdout.destroyed) process.stdout.write(JSON.stringify(event) + '\n');
 };
@@ -97,6 +103,27 @@ async function start(raw) {
   if (config.suppressTestPlayback) window.webContents.setAudioMuted(true);
   try { await window.loadURL(config.url); } catch { fail('page'); return; }
   if (!closing) emit({ type: 'host.ready', hidden: !window.isVisible() });
+  if (configArgument) watchHelper(config.origin);
+}
+
+function watchHelper(origin) {
+  let misses = 0;
+  const timer = setInterval(async () => {
+    try { misses = (await net.fetch(origin + '/health', { cache: 'no-store' })).ok ? 0 : misses + 1; } catch { misses++; }
+    if (misses >= 2) { clearInterval(timer); stop(); }
+  }, 1500);
+}
+
+if (configArgument) {
+  configured = true;
+  let value;
+  try {
+    const file = configArgument.slice('--uvoice-config='.length);
+    value = JSON.parse(readFileSync(file, 'utf8'));
+    rmSync(file, { force: true });
+  } catch { value = undefined; }
+  if (value) void start(value).catch(() => fail('startup'));
+  else setImmediate(() => fail('configuration'));
 }
 
 process.stdin.setEncoding('utf8');
@@ -114,8 +141,8 @@ process.stdin.on('data', chunk => {
     void start(value).catch(() => fail('startup'));
   }
 });
-process.stdin.on('end', () => stop());
-process.stdin.on('error', () => stop());
+process.stdin.on('end', () => { if (!configArgument) stop(); });
+process.stdin.on('error', () => { if (!configArgument) stop(); });
 process.stdout.on('error', () => stop());
 process.once('SIGINT', () => stop());
 process.once('SIGTERM', () => stop());
@@ -123,4 +150,4 @@ app.on('window-all-closed', () => stop());
 app.on('child-process-gone', (_event, details) => {
   if (details.type === 'Audio Service' || details.name === 'Audio Service') fail('renderer');
 });
-configurationDeadline = setTimeout(() => fail('configuration'), 15_000);
+if (!configArgument) configurationDeadline = setTimeout(() => fail('configuration'), 15_000);
