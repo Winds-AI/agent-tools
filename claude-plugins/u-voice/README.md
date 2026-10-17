@@ -28,7 +28,7 @@ Start Claude yourself in your usual bypass mode. The plugin attaches to that ses
 
 ## Requirements and installation
 
-Tested against Claude Code **2.1.295** and Node **24**. Node 22 or newer is required. The plugin uses Claude's native JavaScript mods, including `session.append`; an older Claude release may lack the required API.
+Tested against Claude Code **2.1.302** and Node **24**. Node 22 or newer is required. The plugin uses Claude's native JavaScript mods, including `session.append`; an older Claude release may lack the required API.
 
 Both Claude Code and Codex must already be signed in. The helper reads `~/.codex/auth.json` (or `CODEX_HOME/auth.json`) and uses the installed Codex client version. OAuth credentials stay in the Node helper; the hidden Electron audio host receives only the WebRTC session description and a temporary localhost bridge token.
 
@@ -47,7 +47,7 @@ For development without installation:
 claude --plugin-dir "$PWD"
 ```
 
-On WSL, the helper runs in Linux and launches the Windows Electron audio host so it can use your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone, and WSL localhost forwarding must be available. Native macOS, Windows and Linux use the matching Electron runtime for their platform. Linux requires a normal desktop display and working user audio service; bare SSH/headless servers are not a supported audio target.
+On WSL, the helper runs in Linux and launches the Windows Electron audio host so it can use your default Windows microphone and speakers. Windows must allow desktop apps to access the microphone, and WSL localhost forwarding must be available. Windows Electron started from WSL gets no stdin and survives a kill of its WSL-side process, so on WSL the host reads its configuration from a private file in its per-call profile and exits on its own once the helper stops answering. Native macOS, Windows and Linux use the matching Electron runtime for their platform. Linux requires a normal desktop display and working user audio service; bare SSH/headless servers are not a supported audio target.
 
 The Electron runtime is roughly 120–180 MB compressed depending on platform and is cached after the first `/v`. While voice runs it is two processes (about 70 MB on macOS): GPU, audio and network services stay in the main process, and hardware acceleration is off. It has its own temporary profile and closes when voice stops or the Claude session exits; your normal browser is untouched. The hidden audio path is checked with synthetic audio. Actual microphone and speaker behavior still needs a manual check on your hardware.
 

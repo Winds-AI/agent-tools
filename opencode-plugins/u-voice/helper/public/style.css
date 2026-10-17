@@ -1,0 +1,92 @@
+:root {
+  color-scheme: light;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #182024;
+  background: #f2f5f3;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(100%, 480px);
+  padding: 34px;
+  border: 1px solid #dce3df;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 20px 70px #10251b12;
+}
+
+.eyebrow {
+  color: #597564;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .13em;
+}
+
+h1 { margin: 9px 0 5px; font-size: 32px; letter-spacing: -.04em; }
+.intro { margin: 0; color: #5b6861; line-height: 1.5; }
+
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 30px 0 19px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #9aa69f; }
+.dot.connecting { background: #d99a35; animation: pulse 1.2s infinite; }
+.dot.listening { background: #2a9c68; }
+.dot.muted { background: #d08442; }
+.dot.error { background: #c94b47; }
+
+.controls { display: flex; gap: 9px; flex-wrap: wrap; }
+button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #cfd9d3;
+  border-radius: 11px;
+  color: #22332a;
+  background: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #f3f7f4; }
+button:disabled { cursor: default; opacity: .45; }
+button.primary { color: #fff; border-color: #18764d; background: #18764d; }
+button.primary:hover:not(:disabled) { background: #126641; }
+button.quiet { border-color: transparent; }
+
+.detail { min-height: 22px; margin: 15px 0 0; color: #5b6861; font-size: 13px; }
+.captions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 190px;
+  overflow: auto;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0ee;
+}
+.caption { color: #44534a; font-size: 13px; line-height: 1.45; }
+.caption strong { color: #213a2c; }
+.privacy { margin: 18px 0 0; color: #78827d; font-size: 11px; line-height: 1.5; }
+audio { display: none; }
+
+@keyframes pulse { 50% { opacity: .38; } }
+
+@media (max-width: 480px) {
+  body { padding: 12px; }
+  .panel { padding: 25px 21px; }
+}

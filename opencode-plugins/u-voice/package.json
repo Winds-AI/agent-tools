@@ -1,0 +1,13 @@
+{
+  "name": "opencode-uvoice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Voice mode for OpenCode: talk with the current session through Codex GPT-Live, including steering while it works.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
