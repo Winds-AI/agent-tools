@@ -43,6 +43,7 @@ The other top-level directories contain standalone agent utilities and are not P
 | Tool | Path | Purpose |
 | --- | --- | --- |
 | Codex Ears | `codex-ears` | Audio transcription via the ChatGPT transcribe endpoint |
+| Codex Dictation Archive | `codex-dictation-archive` | Keep every Codex app dictation (audio + transcript) past Codex's 20-item limit |
 | Codex Eyes | `codex-eyes` | Image analysis via Codex (GPT-5.6 Luna) |
 | Codex Image | `codex-image` | Image generation and editing (text, or images + text, to image) via Codex |
 | Gemini Eyes | `gemini-eyes` | Image analysis via Antigravity (Gemini 3.8 Flash) |
