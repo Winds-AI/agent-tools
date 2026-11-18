@@ -1,0 +1,6 @@
+{
+  "models": [
+    {"model": "qwen/qwen3.8-27b", "extra": {"reasoning_effort": "none"}}
+  ],
+  "vocabulary": []
+}
