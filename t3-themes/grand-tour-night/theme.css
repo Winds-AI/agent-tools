@@ -1,0 +1,244 @@
+/* Grand Tour Night. The painting, plus a rocket riding its ring. */
+.dark {
+  /* One painting pixel in CSS px: a little taller than the window, but never so big that the
+     ring's tip goes under the sidebar. The painting's top and left edges are plain sky, so any
+     gap there melts into the background. */
+  --gt-u: min(100vh * 1.06 / 941, (100vw - 16rem) / 1350);
+  --gt-x: calc(100vw - 1672 * var(--gt-u));
+  --gt-y: calc(100vh - 941 * var(--gt-u));
+  --gt-band: #00171df7;
+  --gt-rocket: url("__ROCKET__") center / calc(182 * var(--gt-u)) 100% no-repeat;
+}
+
+.dark[data-theme-id] {
+  --primary: #e84a1c !important;
+  --primary-foreground: #fff3e0 !important;
+  --accent: #f6d8a812 !important;
+  --accent-foreground: #fff3e0 !important;
+  --info: #1f6e6e !important;
+  --info-foreground: #9fd0cc !important;
+}
+
+.dark,
+[data-app-sidebar] {
+  --sidebar-row-hover: #f6d8a80d !important;
+  --sidebar-row-selected: #1f6e6e40 !important;
+}
+
+::selection {
+  background: #e84a1c;
+  color: #fff3e0;
+}
+
+html {
+  background: url("__GRAIN__") 0 0 / 200px, url("__PICTURE__") 100% 100% / calc(1672 * var(--gt-u)) no-repeat #00171d fixed !important;
+  background-blend-mode: overlay, normal;
+}
+
+body,
+[data-slot="sidebar-wrapper"],
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll] {
+  background: transparent !important;
+}
+
+html::after,
+body::before,
+[data-slot="sidebar-wrapper"]::before,
+[data-slot="sidebar-wrapper"]::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* The rocket rides the top of the ring and slips behind the planet. Its box is centred on the
+   painting's corner and moved along keyframes measured from the painting. */
+html::after,
+body::before {
+  left: var(--gt-x);
+  top: var(--gt-y);
+  width: calc(780 * var(--gt-u));
+  height: calc(78 * var(--gt-u));
+  margin: calc(-39 * var(--gt-u)) 0 0 calc(-390 * var(--gt-u));
+  background: var(--gt-rocket);
+  opacity: 0;
+  animation: gt-ride 56s steps(23) infinite;
+  will-change: transform, opacity;
+}
+
+/* While an agent works, a second rocket takes over: long flame, dashed trail, a stop-motion shudder. */
+body::before {
+  background: var(--gt-rocket), url("__TRAIL__") center / 100% 100%;
+  visibility: hidden;
+  transform-origin: 59.2% 50%;
+  animation: gt-ride 56s steps(23) infinite, gt-flick 0.36s steps(1) infinite;
+}
+
+html:has([data-chat-composer-form] button[class~="bg-destructive/90"])::after {
+  visibility: hidden;
+}
+
+html:has([data-chat-composer-form] button[class~="bg-destructive/90"]) body::before {
+  visibility: visible;
+}
+
+@keyframes __RIDE__ {
+}
+
+@keyframes gt-flick {
+  33% {
+    scale: 1.07 1;
+  }
+  66% {
+    scale: 0.95 1;
+  }
+}
+
+/* A few stars of our own, twinkling out of step, frame by frame. */
+[data-slot="sidebar-wrapper"]::before {
+  __BOX_A__: 0;
+  background: url("__STARS_A__");
+  animation: gt-twinkle-a 5.4s step-end infinite;
+}
+
+[data-slot="sidebar-wrapper"]::after {
+  __BOX_B__: 0;
+  background: url("__STARS_B__");
+  animation: gt-twinkle-b 4.2s step-end infinite;
+}
+
+@keyframes gt-twinkle-a {
+  22% {
+    opacity: 0.45;
+  }
+  30% {
+    opacity: 1;
+  }
+  58% {
+    opacity: 0.7;
+  }
+  64% {
+    opacity: 0.25;
+  }
+  72% {
+    opacity: 1;
+  }
+}
+
+@keyframes gt-twinkle-b {
+  0% {
+    opacity: 0.55;
+  }
+  14% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.3;
+  }
+  56% {
+    opacity: 0.8;
+  }
+  80% {
+    opacity: 1;
+  }
+}
+
+/* In a thread the column sits on a dark band whose edges fade into the picture. */
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #00171d00 calc(50% - 44rem), calc(50% - 30rem), var(--gt-band) calc(50% - 25rem), var(--gt-band) calc(50% + 25rem), calc(50% + 30rem), #00171d00 calc(50% + 44rem)) !important;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #f6d8a824 !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: #001218;
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: #1f6e6e40;
+  box-shadow: inset 2px 0 #e84a1c;
+  border-radius: 0 8px 8px 0;
+}
+
+[data-chat-header] {
+  background: #00171dd9 !important;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+}
+
+/* The start screen: a poster headline in tall geometric capitals. */
+[data-chat-composer-stack] h1 {
+  font: 400 semi-condensed 2.5rem / 1.1 Futura, Bahnschrift, "Century Gothic", var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+[data-user-message-bubble] {
+  background: #062a32;
+  box-shadow: inset 0 0 0 1px #f6d8a83d;
+  border-radius: 14px;
+}
+
+.chat-markdown-codeblock {
+  box-shadow: inset 0 0 0 1px #1f6e6e80;
+}
+
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before {
+  background: #021d24 !important;
+  backdrop-filter: none !important;
+}
+
+[data-slot="composer-host"]::after {
+  border-color: #f6d8a8b3;
+}
+
+[data-thread-details-card],
+[data-slot="popover-popup"]:not(:has([data-thread-details-card])),
+[data-slot="menu-popup"] {
+  background: #021d24;
+  backdrop-filter: none;
+  border-color: #f6d8a8a0;
+}
+
+/* Send is a burnt orange disc; stop turns it to cream. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled) {
+  background: #e84a1c;
+  color: #fff3e0;
+  border-radius: 50%;
+}
+
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  background: #f6d8a8;
+  color: #b83a14;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html::after,
+  body::before {
+    __PARK__: 0;
+    opacity: 1;
+  }
+
+  html::after,
+  body::before,
+  [data-slot="sidebar-wrapper"]::before,
+  [data-slot="sidebar-wrapper"]::after {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,242 @@
+/* Perihelion. One great comet, painted, on ink navy. */
+.dark[data-theme-id] {
+  --primary: #edf3fa !important;
+  --primary-foreground: #070b14 !important;
+  --accent: #edf3fa12 !important;
+  --accent-foreground: #edf3fa !important;
+}
+
+.dark,
+[data-app-sidebar],
+[data-workspace-area="settings-nav"] {
+  --sidebar-row-hover: #edf3fa0b !important;
+  --sidebar-row-active: #edf3fa12 !important;
+  --sidebar-row-selected: #101828 !important;
+}
+
+::selection {
+  background: #5ca4e666;
+  color: #edf3fa;
+}
+
+/* The painting covers the window. background-position puts the picture's head (22.3%, 88%)
+   on the window's same point, so the head always sits at 22.3vw 88vh.
+   --ph-k is one pixel of the 1672-wide painting at its cover size. */
+html {
+  --ph-k: max(100vw / 1672, 100vh / 941);
+  --ph-st: __STAIR__;
+  background: url("__GRAIN__"), url("__ART__") 22.3% 88% / cover no-repeat #040a16 !important;
+}
+
+body,
+[data-slot="sidebar-wrapper"] {
+  background: transparent !important;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  left: 22.3vw;
+  top: 88vh;
+  pointer-events: none;
+}
+
+/* A soft band of light travels along the dust tail, away from the head. */
+body::before {
+  width: calc(120 * var(--ph-k));
+  height: calc(560 * var(--ph-k));
+  margin: calc(-280 * var(--ph-k)) 0 0 calc(-60 * var(--ph-k));
+  background: radial-gradient(closest-side, #4a4130, #4a413099 45%, #4a413000);
+  mix-blend-mode: color-dodge;
+  opacity: 0;
+  animation: ph-sweep 25s linear infinite;
+  will-change: transform, opacity;
+}
+
+/* Waypoints follow the tail's measured centre line, in painting pixels from the head. */
+@keyframes ph-sweep {
+  0% {
+    opacity: 0;
+    transform: translate(calc(110 * var(--ph-k)), calc(-95 * var(--ph-k))) rotate(-38deg);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(calc(407 * var(--ph-k)), calc(-290 * var(--ph-k))) rotate(-31deg);
+  }
+  16% {
+    transform: translate(calc(607 * var(--ph-k)), calc(-388 * var(--ph-k))) rotate(-26deg);
+  }
+  24% {
+    transform: translate(calc(807 * var(--ph-k)), calc(-475 * var(--ph-k))) rotate(-22deg);
+  }
+  32% {
+    opacity: 1;
+    transform: translate(calc(1007 * var(--ph-k)), calc(-547 * var(--ph-k))) rotate(-15deg);
+  }
+  40%,
+  100% {
+    opacity: 0;
+    transform: translate(calc(1207 * var(--ph-k)), calc(-568 * var(--ph-k))) rotate(-6deg);
+  }
+}
+
+/* While an agent works, the coma glows and settles. */
+body::after {
+  width: calc(190 * var(--ph-k));
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: radial-gradient(closest-side, #fffdf6, #edf3fa80 22%, #b8ab9326 55%, #b8ab9300);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 1.5s;
+}
+
+body:has(button[class~="bg-destructive/90"])::after {
+  animation: ph-coma 3.6s var(--ph-st) infinite alternate;
+}
+
+@keyframes ph-coma {
+  from {
+    opacity: 0.35;
+    scale: 0.85;
+  }
+  to {
+    opacity: 1;
+    scale: 1.08;
+  }
+}
+
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll],
+[data-workspace-area="pull-requests"] header {
+  background: transparent;
+}
+
+/* Thread screen: a dark band under the message column, fading softly into the painting. */
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #070b1400 calc(50% - 38rem), #070b14b3 calc(50% - 30rem), #070b14f5 calc(50% - 24rem), #070b14f5 calc(50% + 24rem), #070b14b3 calc(50% + 30rem), #070b1400 calc(50% + 38rem));
+}
+
+[data-workspace-area="panel"],
+[data-workspace-area="pull-requests"] {
+  background: #070b14eb;
+  border-color: #edf3fa1a;
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #edf3fa17 !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: #070b14;
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: linear-gradient(90deg, #5ca4e61c, #0000 70%), #101828;
+  box-shadow: inset 0 0 0 1px #edf3fa21;
+  border-radius: 8px;
+}
+
+[data-thread-item] {
+  filter: saturate(0.45);
+}
+
+[data-chat-header] {
+  background: #070b14d9 !important;
+  border-bottom: 1px solid #edf3fa12;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+  border-color: transparent;
+}
+
+[data-chat-composer-stack] {
+  text-shadow: 0 0 3px #070b14, 0 0 14px #070b14, 0 0 30px #070b14;
+}
+
+/* A soft dark pocket behind the headline, where the tail is brightest. */
+[data-chat-canvas]:not(:has(.messages-timeline-scroll)) [data-chat-composer-stack]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: min(72vw, 820px);
+  height: 210px;
+  translate: -50% 12%;
+  z-index: -1;
+  background: radial-gradient(closest-side, #070b14f2 45%, #070b1400);
+  pointer-events: none;
+}
+
+[data-user-message-bubble] {
+  background: #101828;
+  box-shadow: inset 0 0 0 1px #edf3fa26;
+  border-radius: 14px;
+}
+
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before {
+  background: #101828 !important;
+  backdrop-filter: none !important;
+}
+
+[data-slot="composer-host"]::after {
+  border-color: #edf3fa6b;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  border: 0;
+}
+
+/* Send is an ice-white circle; stop is a ring of ion blue. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled) {
+  background: #edf3fa;
+  color: #070b14;
+  border-radius: 50%;
+}
+
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  background: #101828;
+  color: #edf3fa;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px #5ca4e6, 0 0 14px -2px #5ca4e6;
+}
+
+[data-thread-details-card],
+[data-slot="popover-popup"],
+[data-slot="menu-popup"] {
+  background: #101828;
+  backdrop-filter: none;
+  border-color: #edf3fa38;
+  box-shadow: 0 24px 60px -20px #000;
+}
+
+[data-slot="switch"][data-checked] {
+  background: #5ca4e6;
+}
+
+[data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  background: #edf3fa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+    transition: none;
+  }
+
+  body:has(button[class~="bg-destructive/90"])::after {
+    opacity: 0.7;
+  }
+}

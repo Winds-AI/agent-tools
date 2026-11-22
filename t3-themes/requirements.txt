@@ -1,0 +1,4 @@
+numpy
+pillow>=11.3
+fonttools
+brotli

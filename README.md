@@ -48,3 +48,4 @@ The other top-level directories contain standalone agent utilities and are not P
 | Gemini Eyes | `gemini-eyes` | Image analysis via Antigravity (Gemini 3.8 Flash) |
 | Gemini Video | `gemini-video` | Directed video analysis via OpenRouter (Gemini 3.8 Flash, agentic) |
 | Pi Session MD | `pi-session-md` | Convert pi session JSONL files to markdown |
+| T3 Themes | `t3-themes` | Seven space themes for T3 Code, with their sources and build kit |

@@ -1,0 +1,300 @@
+/* Sidereal: the summer Milky Way behind glass. Lit surfaces run amber to blue, like the sky from core to arm. */
+.dark {
+  --sky-st: __STAIR__;
+  --sky-w: max(1500px, 100vw, 200dvh);
+  --sky: url(__ART__) 100% 100% / var(--sky-w) no-repeat #04060e;
+  --lit: linear-gradient(90deg, #f3b56a3d, #7f95d81f 55%, #7f95d80a);
+  --edge: inset 0 -14px 22px -16px #f3b56a8c, inset 0 1px 0 #ffffff0d;
+}
+
+.dark[data-theme-id] {
+  --primary: #f3b56a !important;
+  --primary-foreground: #170d03 !important;
+  --accent: #a9bdf01a !important;
+  --accent-foreground: #f4f6ff !important;
+}
+
+.dark,
+[data-app-sidebar],
+[data-workspace-area="settings-nav"] {
+  --sidebar-row-hover: #a9bdf012 !important;
+  --sidebar-row-active: #a9bdf01c !important;
+  --sidebar-row-selected: #f3b56a24 !important;
+}
+
+::selection {
+  background: #f3b56a55;
+}
+
+[data-slot="sidebar-wrapper"] {
+  background: var(--sky);
+  image-rendering: pixelated;
+  isolation: isolate;
+
+  & > * {
+    image-rendering: auto;
+  }
+
+  /* Diffraction spikes on the brightest real stars, breathing slowly. */
+  &::before,
+  &::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: url("__SPIKES_A__") 100% 100% / var(--sky-w) no-repeat;
+    animation: sky-glint 7s var(--sky-st) infinite alternate;
+    pointer-events: none;
+    image-rendering: auto;
+  }
+
+  &::after {
+    background-image: url("__SPIKES_B__");
+    animation-duration: 5s;
+    animation-delay: -3s;
+  }
+}
+
+@keyframes sky-glint {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sky-turn {
+  to {
+    rotate: 1turn;
+  }
+}
+
+/* A meteor, now and then. */
+[data-slot="sidebar-inset"]::before {
+  content: "";
+  position: absolute;
+  top: 6%;
+  left: 62%;
+  width: 150px;
+  height: 1px;
+  background: linear-gradient(90deg, #fff, #a9c3ff66 30%, #0000);
+  rotate: -31deg;
+  opacity: 0;
+  animation: sky-fall 41s 9s infinite;
+  pointer-events: none;
+}
+
+@keyframes sky-fall {
+  0% {
+    translate: 0 0;
+    opacity: 0;
+  }
+  0.4% {
+    opacity: 1;
+  }
+  2.2%,
+  to {
+    translate: -470px 282px;
+    opacity: 0;
+  }
+}
+
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #04060e73, #04060ee6 calc(50% - 27rem), #04060ee6 calc(50% + 27rem), #04060e73);
+}
+
+[data-workspace-area="panel"],
+[data-workspace-area="pull-requests"] {
+  background: #04060ed6;
+  border-color: #ffffff12;
+}
+
+[data-slot="dialog-popup"][data-app-modal] {
+  background: linear-gradient(#04060ed6 0 0), var(--sky);
+  background-attachment: fixed;
+  border-color: #ffffff12;
+  image-rendering: pixelated;
+
+  & > * {
+    image-rendering: auto;
+  }
+}
+
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll],
+[data-workspace-area="pull-requests"] header {
+  background: transparent;
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #0d1222 !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: color-mix(in srgb, #050814 max(20%, var(--glass-opacity) * 1.5 - 66%), transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: var(--lit);
+  box-shadow: var(--edge);
+  border-color: transparent;
+  border-radius: 10px;
+}
+
+[data-chat-header] {
+  background: #04060ec7 !important;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+}
+
+/* New thread: a telescope setting circle turns behind the composer. */
+[data-chat-canvas]:not(:has(.messages-timeline-scroll)) {
+  & [data-chat-composer-stack]::before,
+  & [data-chat-composer-stack]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: min(1000px, 125vh);
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    z-index: -1;
+    background: url("__DIAL__") center / contain no-repeat;
+    animation: sky-turn 900s steps(5400) infinite;
+    pointer-events: none;
+  }
+
+  & [data-chat-composer-stack]::after {
+    background-image: url("__ORBIT__");
+    animation: sky-turn 180s steps(4320) infinite reverse;
+  }
+
+  & h1 {
+    text-shadow: 0 0 28px #04060e, 0 1px 8px #04060e;
+  }
+
+  & [data-slot="composer-host"]::before {
+    background-color: color-mix(in srgb, #080c1c max(62%, var(--glass-opacity)), #0000);
+  }
+}
+
+[data-user-message-bubble] {
+  background: var(--lit), #0a0f229e;
+  box-shadow: var(--edge);
+  border-radius: 14px;
+}
+
+[data-slot="composer-shell"]::before {
+  background-image: linear-gradient(100deg, #f3b56a17, #7f95d808 55%, transparent 80%);
+}
+
+[data-chat-canvas]:has(.messages-timeline-scroll) [data-slot="composer-shell"]::before,
+[data-chat-canvas]:not(:has(.messages-timeline-scroll)) [data-slot="composer-host"]::before {
+  background-image: var(--lit);
+  box-shadow: inset 0 -18px 28px -20px #f3b56a66, inset 0 1px 0 #ffffff0d;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  border: 0;
+}
+
+/* While a turn runs, a point of light orbits the composer. */
+@property --sky-o {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes sky-orbit {
+  to {
+    --sky-o: 1turn;
+  }
+}
+
+[data-slot="composer-host"]:has(button[class~="bg-destructive/90"])::after {
+  padding: 1.5px;
+  border: 0;
+  background: conic-gradient(from var(--sky-o), #0000 72%, #f3b56a 94%, #fff3dc);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: sky-orbit 5s steps(120) infinite;
+}
+
+[data-thread-details-card] {
+  background-image: linear-gradient(135deg, #f3b56a1c, #7f95d80a 55%, transparent 85%);
+  border-color: #a9bdf017;
+  box-shadow: 0 18px 40px -26px #f3b56a66;
+}
+
+[data-workspace-area="settings-nav"] {
+  background: #00000047;
+  border-color: #ffffff0f;
+
+  & [data-slot="sidebar-menu-button"][data-active="true"] {
+    background: var(--lit);
+    box-shadow: var(--edge);
+  }
+}
+
+[data-slot="switch"][data-checked] {
+  background: linear-gradient(90deg, #f3b56aa6, #7f95d840), #0b1024;
+  box-shadow: inset 0 -8px 14px -10px #ffdca8cc, inset 0 1px 0 #ffffff14;
+  border-color: transparent;
+}
+
+[data-slot="switch-thumb"] {
+  background: #fff3dc;
+}
+
+[data-slot="toggle"][aria-pressed="true"],
+[data-environment-identification="pill"] {
+  background: var(--lit), #0b1024;
+  color: #fff3dc;
+  box-shadow: var(--edge);
+}
+
+/* Send is a small sun; stop is a red giant. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled),
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  background: radial-gradient(circle at 50% 38%, var(--sun));
+  box-shadow: inset 0 1px 0 #ffffff80, 0 0 0 1px var(--rim), 0 0 18px -2px var(--rim);
+  color: #1c0f03;
+  --sun: #fff6e4, #f3b56a 48%, #b56f38;
+  --rim: #f3b56a99;
+}
+
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  --sun: #ffe1d6, #f0685a 48%, #a23232;
+  --rim: #f0685a99;
+}
+
+[data-slot="popover-popup"]:not(:has([data-thread-details-card])),
+[data-slot="menu-popup"] {
+  background: linear-gradient(160deg, #f3b56a17, #0000 45%), color-mix(in srgb, #080c1c var(--glass-opacity), #0000);
+  border-color: #a9bdf01f;
+  box-shadow: inset 0 1px 0 #ffffff0f, 0 24px 60px -20px #000000e6;
+}
+
+[data-app-modal] {
+  & [style*="d) 30%"] {
+    background: #6a4a2c !important;
+  }
+
+  & [style*="d) 60%"] {
+    background: #c78b4c !important;
+  }
+
+  & [style*="d) 72%"] {
+    background: #ffdca8 !important;
+  }
+}

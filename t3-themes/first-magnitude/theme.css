@@ -1,0 +1,233 @@
+/* First Magnitude. One star, photographed on glass. */
+.dark {
+  --fm-st: __STAIR__;
+  --fm-x: 84vw;
+  --fm-y: 27vh;
+}
+
+/* In a thread the star moves to the middle of the right margin, clear of the corner card. */
+.dark:has(.messages-timeline-scroll) {
+  --fm-x: 90vw;
+  --fm-y: 54vh;
+}
+
+.dark[data-theme-id] {
+  --primary: #f2f7ff !important;
+  --primary-foreground: #040914 !important;
+  --accent: #9cc2ff1c !important;
+  --accent-foreground: #f2f7ff !important;
+}
+
+.dark,
+[data-app-sidebar],
+[data-workspace-area="settings-nav"] {
+  --sidebar-row-hover: #9cc2ff12 !important;
+  --sidebar-row-active: #9cc2ff1c !important;
+  --sidebar-row-selected: #9cc2ff24 !important;
+}
+
+::selection {
+  background: #3e76ba;
+  color: #fff;
+}
+
+/* The plate: deep blue wash around the star, and the faint field. */
+html {
+  background:
+    url("__STARS__") center / cover no-repeat,
+    radial-gradient(70vmax 60vmax at var(--fm-x) var(--fm-y), #0f3470c7, #0a1f4480 42%, #0000 76%) #030712 !important;
+}
+
+body,
+[data-slot="sidebar-wrapper"] {
+  background: transparent !important;
+}
+
+html::after,
+[data-slot="sidebar-wrapper"]::before,
+[data-slot="sidebar-inset"]::before,
+[data-slot="sidebar-inset"]::after {
+  content: "";
+  position: fixed;
+  left: var(--fm-x);
+  top: var(--fm-y);
+  z-index: -1;
+  translate: -50% -50%;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition: transform 2.5s ease-in-out;
+}
+
+/* Bloom and core. */
+[data-slot="sidebar-wrapper"]::before {
+  width: 120vh;
+  aspect-ratio: 1;
+  background: radial-gradient(closest-side, #fff 0.9%, #e4f1ff 1.7%, #8fc8ffd9 3.4%, #4f9be08c 7%, #2f6fc247 16%, #1c4a9426 36%, #0f347012 62%, #0000);
+  animation: fm-breathe 9s var(--fm-st) infinite alternate;
+}
+
+/* Diffraction spikes: the long one lies flat, the other stands. Each is a hairline inside a soft glow. */
+[data-slot="sidebar-inset"]::before {
+  width: 190vw;
+  height: 22px;
+  background:
+    linear-gradient(90deg, #0000, #8fc8ff 28%, #fff 46%, #fff 54%, #8fc8ff 68%, #0000 92%) 0 50% / 100% 1px no-repeat,
+    radial-gradient(closest-side, #4f9be066, #0000) 50% 50% / 44% 100% no-repeat;
+  animation: fm-shimmer 7s var(--fm-st) infinite alternate;
+}
+
+[data-slot="sidebar-inset"]::after {
+  width: 22px;
+  height: 170vh;
+  background:
+    linear-gradient(#0000 8%, #8fc8ff 34%, #fff 46%, #fff 54%, #8fc8ff 70%, #0000) 50% 0 / 1px 100% no-repeat,
+    radial-gradient(closest-side, #4f9be066, #0000) 50% 50% / 100% 42% no-repeat;
+  animation: fm-shimmer 11s -4s var(--fm-st) infinite alternate;
+}
+
+@keyframes fm-breathe {
+  from {
+    opacity: 0.82;
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    scale: 1.03;
+  }
+}
+
+@keyframes fm-shimmer {
+  from {
+    opacity: 0.6;
+    scale: 0.94;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* While a turn runs the star brightens and its spikes reach further. */
+[data-slot="sidebar-wrapper"]:has(button[class~="bg-destructive/90"])::before {
+  transform: scale(1.22);
+}
+
+[data-slot="sidebar-inset"]:has(button[class~="bg-destructive/90"])::before {
+  transform: scaleX(1.35);
+}
+
+[data-slot="sidebar-inset"]:has(button[class~="bg-destructive/90"])::after {
+  transform: scaleY(1.35);
+}
+
+/* Silver grain and the darkened plate corners, over everything behind the UI. */
+html::after {
+  inset: 0;
+  translate: none;
+  background:
+    radial-gradient(120vmax 100vmax at var(--fm-x) var(--fm-y), #0000 36%, #010309e0),
+    url("__GRAIN__");
+}
+
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll],
+[data-workspace-area="pull-requests"] header {
+  background: transparent;
+}
+
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #03071200 calc(50% - 44rem), calc(50% - 29rem), #030712f7 calc(50% - 24rem), #030712f7 calc(50% + 24rem), calc(50% + 29rem), #03071200 calc(50% + 44rem));
+}
+
+[data-workspace-area="panel"],
+[data-workspace-area="pull-requests"] {
+  background: #040914e0;
+  border-color: #9cc2ff1f;
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #101a2e !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: #040914;
+}
+
+[data-thread-item] {
+  filter: saturate(0.5);
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: linear-gradient(90deg, #9cc2ff2e, #9cc2ff0d);
+  box-shadow: inset 2px 0 #f2f7ff;
+  border-radius: 0 8px 8px 0;
+}
+
+[data-chat-header] {
+  background: #040914c7 !important;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+}
+
+[data-chat-canvas] h1 {
+  text-shadow: 0 0 30px #040914, 0 0 12px #040914;
+}
+
+[data-user-message-bubble] {
+  background: #0a1426;
+  box-shadow: inset 0 0 0 1px #9cc2ff47;
+  border-radius: 14px;
+}
+
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before {
+  background: #070e1c !important;
+  backdrop-filter: none !important;
+}
+
+[data-slot="composer-host"]::after {
+  border-color: #9cc2ff59;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  border: 0;
+}
+
+/* Send is a small star of its own. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled) {
+  box-shadow: 0 0 0 1px #fff, 0 0 16px 1px #9cc2ffb3;
+}
+
+[data-thread-details-card],
+[data-slot="popover-popup"]:not(:has([data-thread-details-card])),
+[data-slot="menu-popup"] {
+  background: #070e1c;
+  backdrop-filter: none;
+  border-color: #9cc2ff47;
+  box-shadow: 0 24px 60px -20px #000;
+}
+
+[data-slot="switch"][data-checked] {
+  background: #9cc2ff;
+}
+
+[data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  background: #040914;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sidebar-wrapper"]::before,
+  [data-slot="sidebar-inset"]::before,
+  [data-slot="sidebar-inset"]::after {
+    animation: none;
+  }
+}

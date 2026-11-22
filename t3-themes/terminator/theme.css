@@ -1,0 +1,261 @@
+/* Terminator. A colossal Moon in coarse halftone, cut by the line between day and night. */
+.dark {
+  --tm-st: __STAIR__;
+  --tm-w: max(213vh, 100vw + 24px);
+}
+
+.dark[data-theme-id] {
+  --primary: #eae8e1 !important;
+  --primary-foreground: #08090a !important;
+  --accent: #eae8e112 !important;
+  --accent-foreground: #eae8e1 !important;
+  --info: #eae8e1 !important;
+  --info-foreground: #eae8e1 !important;
+}
+
+.dark,
+[data-app-sidebar],
+[data-workspace-area="settings-nav"] {
+  --sidebar-row-hover: #eae8e10b !important;
+  --sidebar-row-active: #151719 !important;
+  --sidebar-row-selected: #151719 !important;
+}
+
+::selection {
+  background: #eae8e1;
+  color: #08090a;
+}
+
+/* Page black, and a handful of still stars. */
+html {
+  background:
+    radial-gradient(circle at 31% 14%, #eae8e1 0 1px, #0000 1.6px),
+    radial-gradient(circle at 46% 9%, #6e7378 0 .8px, #0000 1.4px),
+    radial-gradient(circle at 79% 23%, #eae8e1 0 1.2px, #0000 1.8px),
+    radial-gradient(circle at 92% 31%, #6e7378 0 .9px, #0000 1.5px),
+    radial-gradient(circle at 24% 30%, #6e7378 0 .8px, #0000 1.4px),
+    radial-gradient(circle at 64% 6%, #eae8e1 0 .8px, #0000 1.4px),
+    radial-gradient(circle at 86% 9%, #6e7378 0 .8px, #0000 1.4px),
+    #08090a !important;
+}
+
+body,
+[data-slot="sidebar-wrapper"] {
+  background: transparent !important;
+}
+
+/* The painted Moon, re-screened live as print. Layers paint in tree order: the Moon, a breathing light,
+   a dot screen (burn), gain (dodge), bone ink (multiply), then page black and stars (lighten).
+   The wrapper's ::after paints after everything inside the inset. */
+[data-slot="sidebar-wrapper"]::before,
+[data-slot="sidebar-inset"]::before,
+[data-slot="sidebar-inset"]::after,
+[data-slot="sidebar-wrapper"]::after {
+  content: "";
+  position: fixed;
+  inset: 36vh 0 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* The Moon passes slowly beneath. Both layers start together, so the light stays pinned to the limb. */
+html::before,
+body::before {
+  content: "";
+  position: fixed;
+  right: -24px;
+  bottom: calc(var(--tm-w) * -.0551);
+  z-index: -1;
+  width: var(--tm-w);
+  aspect-ratio: 418/113;
+  background: url(__MOON__) 0 0 / 100% 100% no-repeat;
+  transform-origin: 60% 100%;
+  animation: tm-drift 90s steps(360) infinite alternate;
+  transition: opacity 1.2s, transform 1.2s;
+  pointer-events: none;
+}
+
+@keyframes tm-drift {
+  to {
+    translate: -18px 0;
+    scale: 1.012;
+  }
+}
+
+/* While an agent works, light breathes over the sunlit limb: dodge brightens the lit craters, black stays black. */
+body::before {
+  background: radial-gradient(36% 44% at 44% 40%, #808080, #0000);
+  mix-blend-mode: color-dodge;
+  visibility: hidden;
+  opacity: 0;
+  animation: tm-drift 90s steps(360) infinite alternate, tm-breathe 3.6s var(--tm-st) infinite alternate;
+}
+
+body:has(button[class~="bg-destructive/90"])::before {
+  visibility: visible;
+}
+
+@keyframes tm-breathe {
+  from {
+    opacity: .1;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A 45-degree dot screen, 5 device pixels square: color-burn lights each dot where the tone beneath beats the cone. */
+[data-slot="sidebar-wrapper"]::before {
+  background: url(__SCREEN__) 0 0 / calc(40px / 9);
+  image-rendering: pixelated;
+  mix-blend-mode: color-burn;
+}
+
+/* Gain: the dots become flat and crisp. */
+[data-slot="sidebar-inset"]::before {
+  background: #bfbfbf;
+  mix-blend-mode: color-dodge;
+}
+
+/* Bone ink. */
+[data-slot="sidebar-inset"]::after {
+  background: #eae8e1;
+  mix-blend-mode: multiply;
+}
+
+/* Page black between the dots. */
+[data-slot="sidebar-wrapper"]::after {
+  background: #08090a;
+  mix-blend-mode: lighten;
+}
+
+/* Thread screen: the horizon stays, dimmer and a little lower, behind a dark reading band. */
+html:has(.messages-timeline-scroll)::before,
+body:has(.messages-timeline-scroll)::before {
+  transform: translateY(4vh);
+}
+
+html:has(.messages-timeline-scroll)::before {
+  opacity: .9;
+}
+
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll],
+[data-workspace-area="pull-requests"] header {
+  background: transparent;
+}
+
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #08090a00 calc(50% - 36rem), #08090af0 calc(50% - 25rem), #08090af0 calc(50% + 25rem), #08090a00 calc(50% + 36rem));
+}
+
+[data-workspace-area="panel"],
+[data-workspace-area="pull-requests"] {
+  background: #08090ae6;
+  border-color: #eae8e126;
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #eae8e11f !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: #08090a;
+}
+
+[data-thread-item] {
+  filter: grayscale(1);
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: #151719;
+  box-shadow: inset 0 0 0 1px #eae8e138;
+  border-radius: 6px;
+}
+
+[data-chat-header] {
+  background: #08090ae6 !important;
+  border-color: #eae8e11f;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+}
+
+/* Start screen: an editorial headline in clean black sky. */
+[data-chat-canvas]:not(:has(.messages-timeline-scroll)) h1 {
+  font-weight: 600;
+  letter-spacing: -.035em;
+}
+
+[data-user-message-bubble] {
+  background: #151719;
+  box-shadow: inset 0 0 0 1px #eae8e11f;
+  border-radius: 6px;
+}
+
+.chat-markdown-codeblock {
+  box-shadow: inset 0 0 0 1px #eae8e11a;
+  border-radius: 6px;
+}
+
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before {
+  background: #08090a !important;
+  backdrop-filter: none !important;
+}
+
+[data-slot="composer-host"]::after {
+  border-color: #eae8e18c;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  border: 0;
+}
+
+/* Send: a bone circle with a black arrow. Stop: the same circle, inverted. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled) {
+  border-radius: 50%;
+}
+
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  background: #08090a;
+  color: #eae8e1;
+  box-shadow: inset 0 0 0 1px #eae8e1;
+  border-radius: 50%;
+}
+
+[data-thread-details-card],
+[data-slot="popover-popup"]:not(:has([data-thread-details-card])),
+[data-slot="menu-popup"] {
+  background: #08090a;
+  backdrop-filter: none;
+  border-color: #eae8e147;
+  box-shadow: 0 24px 60px -20px #000;
+}
+
+[data-slot="switch"][data-checked] {
+  background: #eae8e1;
+}
+
+[data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  background: #08090a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html::before,
+  body::before {
+    animation: none !important;
+  }
+
+  body:has(button[class~="bg-destructive/90"])::before {
+    opacity: .7;
+  }
+}

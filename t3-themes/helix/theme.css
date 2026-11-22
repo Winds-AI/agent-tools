@@ -1,0 +1,252 @@
+/* Helix. A planetary nebula pulled as a two-ink silkscreen: verdigris and bone on near black. */
+.dark {
+  --hx-st: __STAIR__;
+  --hx-x: calc(100vw - 14.85vh);
+  --hx-line: #47a87d59;
+}
+
+.dark[data-theme-id] {
+  --primary: #eaf4ee !important;
+  --primary-foreground: #050c0a !important;
+  --accent: #47a87d1f !important;
+  --accent-foreground: #eaf4ee !important;
+  --info: #47a87d !important;
+  --info-foreground: #8ccbad !important;
+}
+
+.dark,
+[data-app-sidebar],
+[data-workspace-area="settings-nav"] {
+  --sidebar-row-hover: #47a87d14 !important;
+  --sidebar-row-active: #47a87d1f !important;
+  --sidebar-row-selected: #0f1d19 !important;
+}
+
+::selection {
+  background: #47a87d;
+  color: #050c0a;
+}
+
+html {
+  background: #050c0a !important;
+}
+
+body,
+[data-slot="sidebar-wrapper"] {
+  background: transparent !important;
+}
+
+/* The painting fills the window's height, anchored right; a wide window leaves dark canvas at the left,
+   behind the sidebar. Its star sits at (--hx-x, 48.32vh), and every layer below is pinned there. */
+[data-slot="sidebar-wrapper"],
+[data-slot="sidebar-inset"] {
+  &::before,
+  &::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    left: var(--hx-x);
+    top: 48.32vh;
+    translate: -50% -50%;
+    pointer-events: none;
+  }
+}
+
+/* The nebula breathes about its eye. */
+[data-slot="sidebar-wrapper"]::before {
+  inset: 0;
+  translate: none;
+  background: url("__ART__") 100% 0 / auto 100% no-repeat;
+  transform-origin: var(--hx-x) 48.32vh;
+  animation: hx-breathe 28s var(--hx-st) infinite alternate;
+}
+
+@keyframes hx-breathe {
+  to {
+    scale: 1.025;
+  }
+}
+
+/* While an agent works, the inner shell glows and settles: a ring that dodges the inks and leaves black black. */
+[data-slot="sidebar-wrapper"]::after {
+  width: 62vh;
+  aspect-ratio: 1;
+  background: radial-gradient(closest-side, #0000 38%, #2b5545 52%, #1a3229 70%, #0000);
+  mix-blend-mode: color-dodge;
+  opacity: 0;
+  transition: opacity 2s;
+}
+
+[data-slot="sidebar-wrapper"]:has(button[class~="bg-destructive/90"])::after {
+  animation: hx-glow 3.2s var(--hx-st) infinite alternate;
+}
+
+@keyframes hx-glow {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+    scale: 1.04;
+  }
+}
+
+/* One still halftone screen over the picture, so the inks read as dots again. */
+[data-slot="sidebar-inset"]::after {
+  inset: 0;
+  translate: none;
+  background: url("__SCREEN__") 0 0 / 8.8889px;
+}
+
+/* The central star twinkles. */
+[data-slot="sidebar-inset"]::before {
+  width: 16px;
+  aspect-ratio: 1;
+  background: radial-gradient(closest-side, #fff 20%, #eaf4ee59 42%, #eaf4ee00);
+  animation: hx-twinkle 4.5s var(--hx-st) infinite alternate;
+}
+
+@keyframes hx-twinkle {
+  from {
+    opacity: 0.3;
+    scale: 0.55;
+  }
+}
+
+[data-chat-canvas],
+[data-slot="sidebar-inset"],
+[data-slot="sidebar-inset"] > div,
+[data-chat-canvas] :is([data-workspace-area="conversation"], [data-timeline-loading], .messages-timeline-scroll, [data-chat-composer-form]),
+[data-workspace-area="panel"] :is([class~="bg-background"], [class~="bg-card"]),
+[data-settings-page-scroll],
+[data-workspace-area="pull-requests"] header {
+  background: transparent;
+}
+
+/* Thread: the column sits on a dark band; the nebula shows in the margins. */
+[data-chat-canvas]:has(.messages-timeline-scroll):not([data-side-chat-pane] *) {
+  background: linear-gradient(90deg, #050c0a00 calc(50% - 44rem), calc(50% - 29rem), #050c0a calc(50% - 24rem), #050c0a calc(50% + 24rem), calc(50% + 29rem), #050c0a00 calc(50% + 44rem));
+}
+
+[data-workspace-area="panel"],
+[data-workspace-area="pull-requests"] {
+  background: #050c0af0;
+  border-color: var(--hx-line);
+}
+
+[data-slot="sidebar-container"] {
+  border-right-color: #47a87d33 !important;
+}
+
+[data-slot="sidebar-inner"] {
+  background: #050c0a;
+}
+
+[data-thread-item] [aria-current="page"] {
+  background: #0f1d19;
+  box-shadow: inset 2px 0 #47a87d, inset 0 0 0 1px #47a87d26;
+  border-radius: 0 8px 8px 0;
+}
+
+[data-thread-item] {
+  filter: saturate(0.5);
+}
+
+[data-chat-header] {
+  background: #050c0ae6 !important;
+  border-bottom-color: #47a87d26;
+}
+
+[data-chat-column]:not(:has(.messages-timeline-scroll)) [data-chat-header] {
+  background: transparent !important;
+}
+
+/* Start: the headline and the composer's footer sit clean over the ink. */
+[data-chat-canvas]:not(:has(.messages-timeline-scroll)) {
+  & h1 {
+    letter-spacing: -0.02em;
+  }
+
+  /* A knockout: the paper left bare behind the headline. */
+  & :has(> h1) {
+    position: relative;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -36px -24px -20px;
+      z-index: -1;
+      background: radial-gradient(closest-side, #050c0a 72%, #050c0a00);
+      pointer-events: none;
+    }
+  }
+
+  & [data-slot="composer-context-strip"] button {
+    background: #050c0ae6;
+    color: #eaf4ee;
+  }
+
+  & [data-chat-header] [data-slot="button"] {
+    background: #050c0ad9;
+  }
+}
+
+[data-user-message-bubble] {
+  background: #0f1d19;
+  box-shadow: inset 0 0 0 1px var(--hx-line);
+  border-radius: 14px;
+}
+
+[data-slot="composer-host"]::before,
+[data-slot="composer-shell"]::before {
+  background: #09130f !important;
+  backdrop-filter: none !important;
+}
+
+[data-slot="composer-host"]::after {
+  border-color: #47a87dbf;
+}
+
+[data-slot="composer-context-strip"] {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  border: 0;
+}
+
+/* Send is a bone circle; stop a verdigris one. */
+[data-chat-composer-form] button[class~="bg-message-action"]:not(:disabled),
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  border-radius: 50%;
+  background: #eaf4ee;
+  color: #050c0a;
+}
+
+[data-chat-composer-form] button[class~="bg-destructive/90"] {
+  background: #47a87d;
+}
+
+[data-thread-details-card],
+[data-slot="popover-popup"]:not(:has([data-thread-details-card])),
+[data-slot="menu-popup"] {
+  background: #050c0a;
+  backdrop-filter: none;
+  border-color: var(--hx-line);
+  box-shadow: 0 24px 60px -20px #000;
+}
+
+[data-slot="switch"][data-checked] {
+  background: #47a87d;
+}
+
+[data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  background: #050c0a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sidebar-wrapper"]::before,
+  [data-slot="sidebar-wrapper"]::after,
+  [data-slot="sidebar-inset"]::before {
+    animation: none !important;
+  }
+}
