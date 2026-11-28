@@ -28,22 +28,24 @@ You must understand the whole system, codebase, and edge cases deeply. **The tar
 
 ## 3. Anchor on the Target & Hunt Unknowns First
 
-Do not write prompts as if the target model were you. Anchor every decision on the target's actual axes:
+Do not write prompts as if the target model were you — and do not assume what it can or cannot do. Models improve fast enough that capability assumptions are regularly wrong; underrating a model blocks its potential just as overrating it causes failures. Anchor decisions on the target's actual axes:
 
 - **Exact model & family** (and its post-training quirks: literalness, verbosity, tool-use habits, instruction-following strength)
 - **Reasoning level** (non-reasoning, low, medium, high)
 - **Modalities** (text, voice/realtime, vision, audio, mixed)
 - **Knowledge cutoff** (what it can be assumed to know vs. what must be supplied)
+- **Harness primitives** (what tools and capabilities the target already has — e.g., search, file reads, execution — so you leverage them instead of hardcoding around them)
 - **Runtime budget** (latency, token cost, and reliability requirements)
 
 Before drafting, close unknowns on **both** sides:
 
 1. **Author-side unknowns:** Read the real codebase, SDK/API behavior, and real input/output logs. Check official model documentation *and* credible community or open-source findings so you don't reinvent what practitioners have already mapped — use those findings as priors to focus your work, not blind dogma. Surface unstated goals, edge cases, and human taste directly with the user; capable models confidently fill ambiguity with guesses.
-2. **Target-side unknowns (selective baseline probing):** Don't guess what the target model knows or how it reads critical terms. When API access and budget allow, run small, isolated one-off calls against the target model on **high-leverage unknowns** only — e.g., whether it accurately knows a post-cutoff library/API, or how it interprets key domain words you plan to use. Use that baseline to supply *only* what is missing or misread.
+2. **Target-side unknowns (selective baseline probing):** Don't guess what the target model knows, how it reads critical terms, or where its capability ceiling sits. When API access and budget allow, run small, isolated one-off calls on **high-leverage unknowns** only — e.g., whether it knows a post-cutoff library, how it interprets key terms, or whether a capability limit you suspect is real rather than an assumption. Use that baseline to supply *only* what is missing, misread, or genuinely needed.
 3. **Adapt when probing isn't available:** If there is no API access, a tight budget cap, or offline constraints, rely on docs, real code/logs, and community priors, keep the first draft lean, and explicitly mark which assumptions remain unverified.
 
 ## 4. Drafting: Principles Over Spoon-Feeding
 
+- **Solve simple problems directly; find the root on hard ones.** When a requirement starts turning into a brittle matrix (hardcoded model names, reasoning tiers, long branching rules), step back and isolate the underlying property. One crisp line aimed at the root (e.g., *"cap at 2–3 on slow or high-thinking models"*) lets a capable model combine its own knowledge with harness tools (like search) to resolve specifics at runtime — and ages gracefully as models evolve.
 - **Default to teaching *how to think*.** Strong and reasoning models generalize far better from clear mental models than from brittle lists of edge-case rules. Aim for:
   - Clear intent and real-world impact
   - Underlying principles and **tie-breakers** for competing goals (most prompt failures happen where two rules collide with no priority)
@@ -51,7 +53,7 @@ Before drafting, close unknowns on **both** sides:
   - Explicit **escape hatches** — what to do when information is missing, uncertain, or out of scope (permission to abstain, ask, or stop early prevents hallucinated helpfulness)
   - A concrete definition of "done"
 - **Prefer positive defaults over "DON'T" lists.** Saying what *to* do under ambiguity beats stacking prohibitions that leave the model guessing the intended behavior.
-- **Calibrate guardrails to the target.** Principles alone shine on frontier reasoning models, where rigid step-by-step scripts can actively hurt. Smaller, faster, or non-reasoning models — or high-variance formatting/judgment tasks — may need concrete examples, rubrics, structured thinking, or strict output schemas where principles won't hold. Use them where they earn their keep, not by reflex.
+- **Start lean; earn every guardrail.** Spend tokens on real failure modes, not hand-holding steps the model can already handle. Principles alone shine on frontier reasoning models, where rigid scripts can actively hurt; smaller, faster, or non-reasoning models — or high-variance formatting/judgment tasks — may need concrete examples, rubrics, structured thinking, or strict schemas. Add scaffolding where experiments prove principles won't hold, not from untested assumptions that underrate the model.
 - **Enforce trust boundaries.** Clearly separate trusted instructions from untrusted external data (user input, web pages, emails, tool outputs) so data is never mistaken for instructions.
 
 ## 5. Verification & Feedback Loops
